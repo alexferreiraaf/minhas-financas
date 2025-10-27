@@ -19,8 +19,8 @@ export default function FinancyCanvas() {
   
   const transactionsQuery = useMemoFirebase(() => {
       if (!firestore || !user) return null;
-      const coll = collection(firestore, 'transactions');
-      return query(coll, where('userId', '==', user.uid), orderBy('data', 'desc'));
+      const coll = collection(firestore, `users/${user.uid}/transactions`);
+      return query(coll, orderBy('data', 'desc'));
   }, [firestore, user]);
 
   const { data: transactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
@@ -94,7 +94,7 @@ export default function FinancyCanvas() {
       data: serverTimestamp(),
     };
 
-    const transactionsCollection = collection(firestore, 'transactions');
+    const transactionsCollection = collection(firestore, `users/${user.uid}/transactions`);
     addDocumentNonBlocking(transactionsCollection, newTransaction);
 
 
@@ -135,7 +135,7 @@ export default function FinancyCanvas() {
             <Alert variant="destructive" className="mb-4">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Ops! Ocorreu um Erro</AlertTitle>
-                <AlertDescription className="font-mono text-xs">{pageError.message}</AlertDescription>
+                <AlertDescription className="font-mono text-xs">{typeof pageError === 'string' ? pageError : pageError.message}</AlertDescription>
             </Alert>
         )}
         <header className="mb-8 p-6 bg-card rounded-2xl shadow-lg border-t-4 border-primary">
@@ -204,7 +204,7 @@ export default function FinancyCanvas() {
                       <div>
                         <p className="font-medium text-foreground leading-tight">{t.descricao}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {t.data && t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                       </div>
                     </div>
@@ -269,3 +269,5 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
