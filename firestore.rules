@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    /**
+     * @description This ruleset enforces a strict user-ownership model for both user profiles and their financial transactions.
+     * All data is nested under `/artifacts/{appId}/users/{userId}`, ensuring that only the authenticated user can access their own data.
+     * Data relating to a specific user should stored under a path containing that user's id.
+     *
+     * Key Security Decisions:
+     * - Users can only create, read, update, and delete their own user document and transactions.
+     * - Listing transactions is restricted to the owner of the transactions.
+     *
+     * Structural Segregation:
+     * - Private user data (transactions) are stored in a user-specific subcollection, enforcing access control through path-based rules.
+     *
+     * Denormalization for Authorization:
+     * - Not Required: Authorization is achieved through path-based rules.
+     */
+
+    /**
+     * @description Allows a user to manage their own user document.
+     * @path /artifacts/{appId}/users/{userId}
+     * @allow (create) - Authenticated user with UID 'user_abc' can create their own user document at /artifacts/app123/users/user_abc if the document ID matches the UID.
+     * @allow (get) - Authenticated user with UID 'user_abc' can read their own user document at /artifacts/app123/users/user_abc.
+     * @allow (update) - Authenticated user with UID 'user_abc' can update their own user document at /artifacts/app123/users/user_abc.
+     * @allow (delete) - Authenticated user with UID 'user_abc' can delete their own user document at /artifacts/app123/users/user_abc.
+     * @deny (create) - Authenticated user with UID 'user_xyz' cannot create a document at /artifacts/app123/users/user_abc.
+     * @deny (get) - Authenticated user with UID 'user_xyz' cannot read the document at /artifacts/app123/users/user_abc.
+     * @deny (update) - Authenticated user with UID 'user_xyz' cannot update the document at /artifacts/app123/users/user_abc.
+     * @deny (delete) - Authenticated user with UID 'user_xyz' cannot delete the document at /artifacts/app123/users/user_abc.
+     * @principle Enforces document ownership for all operations.
+     */
+    match /artifacts/{appId}/users/{userId} {
+      // Define a function to check if the requesting user is the owner of the document.
+      function isOwner(userId) {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      // Allow a user to create their own user document if the userId matches their auth.uid.
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+
+      // Allow a user to read their own user document.
+      allow get: if isOwner(userId);
+
+      // Allow a user to update their own user document.
+      allow update: if isOwner(userId) && resource.data.id == userId;
+
+      // Allow a user to delete their own user document.
+      allow delete: if isOwner(userId) && resource.data.id == userId;
+
+      // Prevent anyone from listing user documents.
+      allow list: if false;
+    }
+
+    /**
+     * @description Allows a user to manage their own transactions.
+     * @path /artifacts/{appId}/users/{userId}/transactions/{transactionId}
+     * @allow (create) - Authenticated user with UID 'user_abc' can create a transaction under their user document at /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @allow (get) - Authenticated user with UID 'user_abc' can read their own transaction at /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @allow (update) - Authenticated user with UID 'user_abc' can update their own transaction at /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @allow (delete) - Authenticated user with UID 'user_abc' can delete their own transaction at /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @allow (list) - Authenticated user with UID 'user_abc' can list their own transaction at /artifacts/app123/users/user_abc/transactions
+     * @deny (create) - Authenticated user with UID 'user_xyz' cannot create a transaction under /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @deny (get) - Authenticated user with UID 'user_xyz' cannot read the transaction at /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @deny (update) - Authenticated user with UID 'user_xyz' cannot update the transaction at /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @deny (delete) - Authenticated user with UID 'user_xyz' cannot delete the transaction at /artifacts/app123/users/user_abc/transactions/transaction_123.
+     * @principle Enforces document ownership for writes, restricts listing to owner.
+     */
+    match /artifacts/{appId}/users/{userId}/transactions/{transactionId} {
+      // Define a function to check if the requesting user is the owner of the transaction.
+      function isOwner(userId) {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function isExistingOwner(userId) {
+          return isOwner(userId) && resource != null;
+      }
+
+      // Allow a user to create a transaction if the userId matches their auth.uid.
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+
+      // Allow a user to read their own transaction.
+      allow get: if isOwner(userId);
+
+      // Allow a user to update their own transaction if the userId matches their auth.uid.
+      allow update: if isExistingOwner(userId) && resource.data.userId == userId;
+
+      // Allow a user to delete their own transaction if the userId matches their auth.uid.
+      allow delete: if isExistingOwner(userId) && resource.data.userId == userId;
+
+      // Allow a user to list their own transactions.
+      allow list: if isOwner(userId);
+    }
+  }
+}
