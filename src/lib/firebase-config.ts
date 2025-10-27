@@ -1,4 +1,4 @@
-let firebaseConfig = {};
+let firebaseConfig: any = {};
 
 try {
   // In a Next.js environment, public environment variables are prefixed with NEXT_PUBLIC_

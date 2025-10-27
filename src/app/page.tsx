@@ -5,7 +5,7 @@ import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, type Firestore } from 'firebase/firestore';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
-import { APP_ID, FIREBASE_CONFIG } from '@/lib/firebase-config';
+import { FIREBASE_CONFIG } from '@/lib/firebase-config';
 import type { Transaction, FirestoreTransaction } from '@/lib/types';
 
 import { Button } from '@/components/ui/button';
@@ -32,8 +32,8 @@ export default function FinancyCanvas() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!Object.keys(FIREBASE_CONFIG).length) {
-      setError("Configuração do Firebase ausente. O aplicativo não pode ser iniciado.");
+    if (!Object.keys(FIREBASE_CONFIG).length || !FIREBASE_CONFIG.projectId) {
+      setError("Configuração do Firebase ausente. O aplicativo não pode ser iniciado. Por favor, vincule um projeto Firebase.");
       setIsLoading(false);
       return;
     }
@@ -60,9 +60,9 @@ export default function FinancyCanvas() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthReady || !db || !userId) return;
+    if (!isAuthReady || !db || !userId || !FIREBASE_CONFIG.projectId) return;
 
-    const collectionPath = `artifacts/${APP_ID}/users/${userId}/transactions`;
+    const collectionPath = `users/${userId}/transactions`;
     const transactionsCollection = collection(db as Firestore, collectionPath);
     const q = query(transactionsCollection, orderBy('data', 'desc'));
 
@@ -89,7 +89,13 @@ export default function FinancyCanvas() {
 
     }, (err) => {
       console.error("Erro ao buscar transações: ", err);
-      setError("Não foi possível carregar as transações. Verifique as regras do Firestore.");
+      let errorMessage = "Não foi possível carregar as transações. ";
+      if (err.message.includes("permission-denied") || err.message.includes("PERMISSION_DENIED")) {
+        errorMessage += "Verifique as regras de segurança do Firestore. A regra para leitura pode estar incorreta."
+      } else {
+        errorMessage += "Verifique sua conexão e a configuração do Firestore."
+      }
+      setError(errorMessage);
       setIsLoading(false);
     });
 
@@ -104,13 +110,13 @@ export default function FinancyCanvas() {
   }, []);
   
   const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const cleanValue = e.target.value.replace(/[^\d,]/g, '');
-    const parts = cleanValue.split(',');
-    if (parts.length > 2) {
-      setValue(`${parts[0]},${parts.slice(1).join('')}`);
-    } else {
-      setValue(cleanValue);
-    }
+    let inputValue = e.target.value;
+    inputValue = inputValue.replace(/\D/g, ''); // Remove non-digits
+    inputValue = (Number(inputValue) / 100).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    setValue(inputValue);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -121,7 +127,7 @@ export default function FinancyCanvas() {
     }
 
     setIsSubmitting(true);
-    const numericValue = parseFloat(value.replace(',', '.'));
+    const numericValue = parseFloat(value.replace(/\./g, '').replace(',', '.'));
 
     if (description.trim() === '' || isNaN(numericValue) || numericValue <= 0) {
       setError("Por favor, preencha a descrição e um valor positivo.");
@@ -137,7 +143,7 @@ export default function FinancyCanvas() {
         data: serverTimestamp(),
       };
 
-      const collectionPath = `artifacts/${APP_ID}/users/${userId}/transactions`;
+      const collectionPath = `users/${userId}/transactions`;
       await addDoc(collection(db, collectionPath), transactionData);
 
       setDescription('');
@@ -146,7 +152,13 @@ export default function FinancyCanvas() {
       setError('');
     } catch (e: any) {
       console.error("Erro ao adicionar transação: ", e);
-      setError("Erro ao salvar transação. Tente novamente.");
+      let errorMessage = "Erro ao salvar transação. ";
+       if (e.message.includes("permission-denied") || e.message.includes("PERMISSION_DENIED")) {
+        errorMessage += "Verifique as regras de segurança do Firestore. A regra para escrita pode estar incorreta."
+      } else {
+        errorMessage += "Tente novamente."
+      }
+      setError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -161,17 +173,19 @@ export default function FinancyCanvas() {
     );
   }
   
-  if (error) {
+  if (error && (!FIREBASE_CONFIG.projectId || error.includes("ausente"))) {
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
         <Alert variant="destructive" className="max-w-lg">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Ops! Ocorreu um Erro</AlertTitle>
+            <AlertTitle>Configuração Incompleta</AlertTitle>
             <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
+            <Button onClick={() => window.location.reload()} className='mt-4'>Vincular Projeto Firebase</Button>
         </Alert>
       </div>
     );
   }
+
 
   const BalanceIcon = formType === 'receita' ? ArrowUp : ArrowDown;
   const modalTitle = formType === 'receita' ? 'Adicionar Receita' : 'Adicionar Despesa';
@@ -180,6 +194,13 @@ export default function FinancyCanvas() {
   return (
     <div className="min-h-screen bg-background p-4 sm:p-8 font-body">
       <div className="max-w-xl mx-auto">
+        {error && (
+            <Alert variant="destructive" className="mb-4">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Ops! Ocorreu um Erro</AlertTitle>
+                <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
+            </Alert>
+        )}
         <header className="mb-8 p-6 bg-card rounded-2xl shadow-lg border-t-4 border-primary">
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-2xl font-extrabold text-foreground flex items-center">
@@ -201,14 +222,14 @@ export default function FinancyCanvas() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           <Button
-            onClick={() => { setFormType('receita'); setShowModal(true); }}
+            onClick={() => { setFormType('receita'); setShowModal(true); setError('') }}
             className="w-full p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <ArrowUp className="w-5 h-5 mr-2" />
             Adicionar Receita
           </Button>
           <Button
-            onClick={() => { setFormType('despesa'); setShowModal(true); }}
+            onClick={() => { setFormType('despesa'); setShowModal(true); setError('') }}
             className="w-full p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <ArrowDown className="w-5 h-5 mr-2" />
@@ -257,12 +278,19 @@ export default function FinancyCanvas() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={setShowModal}>
+      <Dialog open={showModal} onOpenChange={(isOpen) => { setShowModal(isOpen); if (!isOpen) setError(''); }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle className={`text-2xl font-bold ${modalColor}`}>{modalTitle}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+             {error && (
+              <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Erro</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <div>
               <Label htmlFor="description" className="text-left">Descrição</Label>
               <Input
@@ -283,6 +311,8 @@ export default function FinancyCanvas() {
                 placeholder="0,00"
                 required
                 className="mt-1"
+                type="text"
+                inputMode="decimal"
               />
             </div>
             <DialogFooter className="pt-4">
