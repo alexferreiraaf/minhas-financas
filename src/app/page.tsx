@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2 } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
-import { collection, query, orderBy, serverTimestamp, doc } from 'firebase/firestore';
+import { collection, query, serverTimestamp, doc } from 'firebase/firestore';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ThemeToggleButton } from '@/components/theme-toggle';
 
 export default function FinancyCanvas() {
   const { firestore, auth } = useFirebase();
@@ -20,7 +21,7 @@ export default function FinancyCanvas() {
   
   const transactionsQuery = useMemoFirebase(() => {
       if (!firestore || !user) return null;
-      return query(collection(firestore, 'users', user.uid, 'transactions'), orderBy('data', 'desc'));
+      return query(collection(firestore, 'users', user.uid, 'transactions'));
   }, [firestore, user]);
 
   const { data: rawTransactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
@@ -36,8 +37,16 @@ export default function FinancyCanvas() {
   const [value, setValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Client-side sorting is no longer needed as orderBy is in the query
-  const transactions = rawTransactions;
+  // Client-side sorting because orderBy is not in the query
+  const transactions = useMemo(() => {
+    if (!rawTransactions) return [];
+    return [...rawTransactions].sort((a, b) => {
+        const dateA = a.data?.toDate() || new Date(0);
+        const dateB = b.data?.toDate() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+    });
+  }, [rawTransactions]);
+
 
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
@@ -166,10 +175,13 @@ export default function FinancyCanvas() {
               <CreditCard className="w-6 h-6 mr-2 text-primary" />
               Financy Canvas
             </h1>
-            <span className="text-xs text-muted-foreground flex items-center">
-              <Users className="w-3 h-3 mr-1" />
-              {user ? user.uid.substring(0,6) : '...'}
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-muted-foreground flex items-center">
+                <Users className="w-3 h-3 mr-1" />
+                {user ? user.uid.substring(0,6) : '...'}
+              </span>
+              <ThemeToggleButton />
+            </div>
           </div>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Saldo Atual</h2>
           <p className={`text-4xl font-bold mt-1 transition-colors duration-300 ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -218,10 +230,10 @@ export default function FinancyCanvas() {
                   <li
                     key={t.id}
                     className={`group flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 
-                      ${t.tipo === 'receita' ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50' : 'border-red-400 bg-red-50/50 hover:bg-red-50'}`}
+                      ${t.tipo === 'receita' ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 dark:border-emerald-700' : 'border-red-400 bg-red-50/50 hover:bg-red-50 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:border-red-700'}`}
                   >
                     <div className="flex items-center">
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mr-3 ${t.tipo === 'receita' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mr-3 ${t.tipo === 'receita' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-800/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-800/30 dark:text-red-400'}`}>
                          {t.tipo === 'receita' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
                       </div>
                       <div>
@@ -232,7 +244,7 @@ export default function FinancyCanvas() {
                       </div>
                     </div>
                     <div className="flex items-center flex-shrink-0 ml-4">
-                      <p className={`font-semibold ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
+                      <p className={`font-semibold ${t.tipo === 'receita' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                         {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
                       </p>
                       <Button
@@ -324,9 +336,9 @@ export default function FinancyCanvas() {
                 <div className="max-h-[60vh] overflow-y-auto py-4 pr-2">
                     <ul className="space-y-3">
                         {despesas.map(d => (
-                            <li key={d.id} className="flex justify-between items-start p-3 bg-red-50/50 rounded-lg">
+                            <li key={d.id} className="flex justify-between items-start p-3 bg-red-50/50 dark:bg-red-900/20 rounded-lg">
                                 <div>
-                                    <p className="font-medium text-red-800">{d.descricao}</p>
+                                    <p className="font-medium text-red-800 dark:text-red-300">{d.descricao}</p>
                                     <p className="text-xs text-muted-foreground mt-1">
                                         {d.data?.toDate().toLocaleString('pt-BR', {
                                             day: '2-digit',
@@ -337,27 +349,27 @@ export default function FinancyCanvas() {
                                         })}
                                     </p>
                                 </div>
-                                <p className="font-semibold text-red-600 whitespace-nowrap ml-4">{formatCurrency(d.valor)}</p>
+                                <p className="font-semibold text-red-600 dark:text-red-400 whitespace-nowrap ml-4">{formatCurrency(d.valor)}</p>
                             </li>
                         ))}
                     </ul>
                 </div>
             ) : (
                 <div className="space-y-4 py-4">
-                    <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
-                        <span className="font-medium text-emerald-700">Total de Receitas</span>
-                        <span className="font-bold text-lg text-emerald-600">{formatCurrency(totalReceitas)}</span>
+                    <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg">
+                        <span className="font-medium text-emerald-700 dark:text-emerald-300">Total de Receitas</span>
+                        <span className="font-bold text-lg text-emerald-600 dark:text-emerald-400">{formatCurrency(totalReceitas)}</span>
                     </div>
                     <div 
-                        className="flex justify-between items-center p-3 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors"
+                        className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/30 rounded-lg cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
                         onClick={() => setShowExpenseDetails(true)}
                     >
-                        <span className="font-medium text-red-700">Total de Despesas</span>
-                        <span className="font-bold text-lg text-red-600">{formatCurrency(totalDespesas)}</span>
+                        <span className="font-medium text-red-700 dark:text-red-300">Total de Despesas</span>
+                        <span className="font-bold text-lg text-red-600 dark:text-red-400">{formatCurrency(totalDespesas)}</span>
                     </div>
                     <div className="flex justify-between items-center p-4 bg-card border-t-2 mt-4 rounded-lg">
                         <span className="font-bold text-foreground">Saldo Final</span>
-                        <span className={`font-extrabold text-xl ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</span>
+                        <span className={`font-extrabold text-xl ${balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(balance)}</span>
                     </div>
                 </div>
             )}
@@ -389,5 +401,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    

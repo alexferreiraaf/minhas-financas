@@ -1,77 +1,80 @@
 /**
- * @fileOverview Firestore Security Rules for the application.
+ * @file Firebase Security Rules for the Finanças app.
  *
- * Core Philosophy:
- * This ruleset enforces a strict user-ownership model.  Each user can only access their own user document and the transactions nested under their user document.
+ * @corePhilosophy This ruleset enforces a strict user-ownership model, ensuring that users can only
+ *                 access and manipulate data associated with their own accounts.
  *
- * Data Structure:
- * - /users/{userId}: Stores user profile information. The {userId} MUST match the authenticated user's UID.
- * - /users/{userId}/transactions/{transactionId}: Stores transaction records for a specific user.
+ * @dataStructure The database is structured with user profiles stored in `/users/{userId}` and
+ *                individual transaction records stored in the `/users/{userId}/transactions/{transactionId}`
+ *                subcollection. This design enforces clear ownership and simplifies access control.
  *
- * Key Security Decisions:
- * - Users can only create their own user document.
- * - Transactions are private to the user and stored as a subcollection of the user's document.
- * - Listing all users is disallowed.
+ * @keySecurityDecisions
+ *   - Users can only read and write their own user profile data.
+ *   - Users can only create, read, update, and delete transactions associated with their own user ID.
+ *   - Listing all users is disallowed to protect user privacy.
+ *   - Data validation is relaxed to allow for rapid prototyping, focusing on ownership and
+ *     relational integrity checks rather than exhaustive schema validation.
  *
- * Denormalization for Authorization:
- *  - The `Transaction` entity already has a `userId` field, which is good.  The create operation will enforce that the `userId` in the document matches the `userId` in the path.
+ * @denormalizationForAuthorization Not applicable in this configuration.
+ *
+ * @structuralSegregation User profiles and transactions are stored in a hierarchical structure,
+ *                       segregating data based on user ownership. This approach is more secure and
+ *                       performant than using a single collection with a user ID field.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Secures the user profile document.  Users can only read and write their own profile.
+     * @description Secures the user profile document.
      * @path /databases/{database}/documents/users/{userId}
-     * @allow (create) User with UID 'user123' can create their profile document with id 'user123'.
-     * @allow (get) User with UID 'user123' can read their profile document with id 'user123'.
-     * @allow (update) User with UID 'user123' can update their profile document with id 'user123'.
-     * @allow (delete) User with UID 'user123' can delete their profile document with id 'user123'.
-     * @deny (create) User with UID 'user123' cannot create a profile document with id 'user456'.
-     * @deny (get) User with UID 'user123' cannot read a profile document with id 'user456'.
-     * @deny (update) User with UID 'user123' cannot update a profile document with id 'user456'.
-     * @deny (delete) User with UID 'user123' cannot delete a profile document with id 'user456'.
-     * @principle Enforces document ownership for all operations.
+     * @allow (create) - Allows a user to create their own profile if the userId matches their auth UID.
+     * @allow (get, update, delete) - Allows a user to read, update, and delete their own profile if the userId matches their auth UID.
+     * @deny (list) - Denies listing all users.
+     * @deny (create) - Denies creating a user profile with a mismatched userId.
+     * @principle Enforces user ownership of their profile data.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
-    
-       /**
-         * @description Secures the transactions subcollection for a specific user. Users can only access their own transactions.
-         * @path /databases/{database}/documents/users/{userId}/transactions/{transactionId}
-         * @allow (create) User with UID 'user123' can create a transaction document under their profile.
-         * @allow (get) User with UID 'user123' can read a transaction document under their profile.
-         * @allow (update) User with UID 'user123' can update a transaction document under their profile.
-         * @allow (delete) User with UID 'user123' can delete a transaction document under their profile.
-         * @deny (create) User with UID 'user456' cannot create a transaction document under 'user123''s profile.
-         * @deny (get) User with UID 'user456' cannot read a transaction document under 'user123''s profile.
-         * @deny (update) User with UID 'user456' cannot update a transaction document under 'user123''s profile.
-         * @deny (delete) User with UID 'user456' cannot delete a transaction document under 'user123''s profile.
-         * @principle Enforces document ownership for all operations on the transactions subcollection.
-         */
-      match /transactions/{transactionId} {
-          allow get: if isOwner(userId);
-          allow list: if isOwner(userId);
-          allow create: if isOwner(userId) && request.resource.data.userId == userId;
-          allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
-          allow delete: if isExistingOwner(userId);
+      // isOwner helper function checks if the uid passed in parameter equals the userId
+      function isOwner(userId) {
+        return request.auth.uid == userId;
       }
+
+      // isSignedIn helper function checks if the user is signed in
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if false;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && isOwner(userId);
+      allow delete: if isSignedIn() && isOwner(userId);
     }
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
+    /**
+     * @description Secures the user's transaction subcollection.
+     * @path /databases/{database}/documents/users/{userId}/transactions/{transactionId}
+     * @allow (create, get, list, update, delete) - Allows a user to manage their own transactions if the userId matches their auth UID.
+     * @deny (create, get, list, update, delete) - Denies access if the userId does not match the auth UID.
+     * @principle Enforces user ownership of their transaction data.
+     */
+    match /users/{userId}/transactions/{transactionId} {
+      // isOwner helper function checks if the uid passed in parameter equals the userId
+      function isOwner(userId) {
+        return request.auth.uid == userId;
+      }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
+      // isSignedIn helper function checks if the user is signed in
+      function isSignedIn() {
+        return request.auth != null;
+      }
 
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && isOwner(userId);
+      allow delete: if isSignedIn() && isOwner(userId);
     }
   }
 }
