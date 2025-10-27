@@ -1,80 +1,95 @@
 /**
- * @file Firestore Security Rules
- * @core_philosophy This ruleset enforces a strict user-ownership model for financial transactions.
- *   Each user has a dedicated data tree under /artifacts/{appId}/users/{userId}/..., and only the
- *   authenticated user matching the {userId} can read and write their own data.
- * @data_structure
- *   - /artifacts/{appId}/users/{userId}: Stores user profile information.
- *   - /artifacts/{appId}/users/{userId}/transactions/{transactionId}: Stores financial transactions for a specific user.
- * @key_security_decisions
- *   - User listing is implicitly denied as there are no rules allowing it.
- *   - Only authenticated users can access their own data; anonymous access is not permitted beyond potential public read collections (if defined).
- *   - The rules are designed to be authorization independent; no data from parent documents needs to be fetched for child document authorization.
+ * @fileoverview Firestore Security Rules for the application.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model. Each user can only access their own data,
+ * specifically their user document and their transactions.
+ *
+ * Data Structure:
+ * Data is nested under /artifacts/{appId}/users/{userId}/transactions/{transactionId}.
+ * The /artifacts/{appId}/users/{userId} document stores user-specific data.
+ *
+ * Key Security Decisions:
+ * - User listing is disallowed.
+ * - Data validation is minimal, focusing on authorization and relational integrity.
+ * - The rules leverage path-based authorization for efficiency and security.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Enforces access control for user documents.
-     * @path /artifacts/{appId}/users/{userId}
-     * @allow (create) Authenticated user can create their own user document if the userId matches their auth UID.
-     * @allow (get, list) Authenticated user can read their own user document if the userId matches their auth UID.
-     * @allow (update, delete) Authenticated user can update/delete their own user document if the userId matches their auth UID.
-     * @deny (create) Authenticated user cannot create a user document for another user.
-     * @deny (get, list) Authenticated user cannot read another user's document.
-     * @deny (update, delete) Authenticated user cannot update/delete another user's document.
-     * @principle Enforces document ownership for all operations.
+     * @description Checks if the request is made by the owner of the resource, based on the userId.
+     * @principle Enforces document ownership for writes.
+     * @param {string} userId - The user ID to compare with the request's auth UID.
+     * @return {bool} - True if the user is the owner, false otherwise.
      */
-    match /artifacts/{appId}/users/{userId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      function isOwner(userId) {
-        return isSignedIn() && request.auth.uid == userId;
-      }
-
-      function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-      }
-
-      allow get: if isOwner(userId);
-      allow list: if false; // Listing of users is not permitted.
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
+    function isOwner(userId) {
+      return request.auth.uid == userId;
     }
 
     /**
-     * @description Enforces access control for transaction documents.
+     * @description Checks if the request is made by the owner of an existing resource.
+     * @principle Ensures that only the owner can modify or delete an existing document.
+     * @param {string} userId - The user ID to compare with the request's auth UID.
+     * @return {bool} - True if the user is the owner and the document exists, false otherwise.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Checks if a user is signed in.
+     * @principle All authorization decisions must rely on request.auth as the source of truth.
+     * @return {bool} - True if the user is signed in, false otherwise.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Rules for documents in the `/artifacts/{appId}/users/{userId}` collection.
+     * @path /artifacts/{appId}/users/{userId}
+     * @allow (create) User 'efsyBj62qqeFnpAsFi107dQ6n022' can create their own user document.
+     * @deny (create) User 'attackerUid' cannot create a user document for 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @allow (get) User 'efsyBj62qqeFnpAsFi107dQ6n022' can get their own user document.
+     * @deny (get) User 'attackerUid' cannot get the user document for 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @allow (update) User 'efsyBj62qqeFnpAsFi107dQ6n022' can update their own user document.
+     * @deny (update) User 'attackerUid' cannot update the user document for 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @allow (delete) User 'efsyBj62qqeFnpAsFi107dQ6n022' can delete their own user document.
+     * @deny (delete) User 'attackerUid' cannot delete the user document for 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @deny (list) Listing users is not allowed.
+     * @principle Restricts access to a user's own data tree.
+     */
+    match /artifacts/{appId}/users/{userId} {
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.id == userId;
+      allow get: if isOwner(userId);
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+      allow list: if false;
+    }
+
+    /**
+     * @description Rules for documents in the `/artifacts/{appId}/users/{userId}/transactions/{transactionId}` collection.
      * @path /artifacts/{appId}/users/{userId}/transactions/{transactionId}
-     * @allow (create) Authenticated user can create a transaction under their user document if the userId matches their auth UID.
-     * @allow (get, list) Authenticated user can read transactions under their user document if the userId matches their auth UID.
-     * @allow (update, delete) Authenticated user can update/delete a transaction under their user document if the userId matches their auth UID.
-     * @deny (create) Authenticated user cannot create a transaction under another user's document.
-     * @deny (get, list) Authenticated user cannot read transactions under another user's document.
-     * @deny (update, delete) Authenticated user cannot update/delete a transaction under another user's document.
-     * @principle Enforces document ownership for all operations.
+     * @allow (create) User 'efsyBj62qqeFnpAsFi107dQ6n022' can create a transaction under their user ID.
+     * @deny (create) User 'attackerUid' cannot create a transaction under user ID 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @allow (get) User 'efsyBj62qqeFnpAsFi107dQ6n022' can get a transaction under their user ID.
+     * @deny (get) User 'attackerUid' cannot get a transaction under user ID 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @allow (update) User 'efsyBj62qqeFnpAsFi107dQ6n022' can update a transaction under their user ID.
+     * @deny (update) User 'attackerUid' cannot update a transaction under user ID 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @allow (delete) User 'efsyBj62qqeFnpAsFi107dQ6n022' can delete a transaction under their user ID.
+     * @deny (delete) User 'attackerUid' cannot delete a transaction under user ID 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @allow (list) User 'efsyBj62qqeFnpAsFi107dQ6n022' can list transactions under their user ID.
+     * @deny (list) User 'attackerUid' cannot list transactions under user ID 'efsyBj62qqeFnpAsFi107dQ6n022'.
+     * @principle Enforces document ownership for writes.
      */
     match /artifacts/{appId}/users/{userId}/transactions/{transactionId} {
-      function isSignedIn() {
-        return request.auth != null;
-      }
-
-      function isOwner(userId) {
-        return isSignedIn() && request.auth.uid == userId;
-      }
-
-       function isExistingOwner(userId) {
-        return isOwner(userId) && resource != null;
-      }
-
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
       allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow get: if isOwner(userId);
       allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
       allow delete: if isExistingOwner(userId);
+      allow list: if isOwner(userId);
     }
   }
 }
