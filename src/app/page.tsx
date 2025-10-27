@@ -19,10 +19,8 @@ export default function FinancyCanvas() {
   
   const transactionsQuery = useMemoFirebase(() => {
       if (!firestore || !user) return null;
-      // Query the root 'transactions' collection
-      const coll = collection(firestore, 'transactions');
-      // Filter transactions by the current user's ID, without ordering to avoid composite index requirement
-      return query(coll, where('userId', '==', user.uid));
+      // Query the user's specific transactions subcollection
+      return query(collection(firestore, 'users', user.uid, 'transactions'), orderBy('data', 'desc'));
   }, [firestore, user]);
 
   const { data: rawTransactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
@@ -36,16 +34,8 @@ export default function FinancyCanvas() {
   const [value, setValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Sort transactions on the client-side
-  const transactions = useMemo(() => {
-    if (!rawTransactions) return [];
-    return [...rawTransactions].sort((a, b) => {
-      const dateA = a.data?.toDate() || new Date(0);
-      const dateB = b.data?.toDate() || new Date(0);
-      return dateB.getTime() - dateA.getTime();
-    });
-  }, [rawTransactions]);
-
+  // Client-side sorting is no longer needed as orderBy is in the query
+  const transactions = rawTransactions;
 
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
@@ -100,6 +90,7 @@ export default function FinancyCanvas() {
     }
 
     const newTransaction = {
+      // userId is implicitly known from the collection path, but can be kept for redundancy if needed
       userId: user.uid,
       descricao: description.trim(),
       valor: numericValue,
@@ -107,9 +98,9 @@ export default function FinancyCanvas() {
       data: serverTimestamp(),
     };
 
-    // Save to the root 'transactions' collection
-    const transactionsCollection = collection(firestore, 'transactions');
-    addDocumentNonBlocking(transactionsCollection, newTransaction);
+    // Save to the user's specific transactions subcollection
+    const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
+    addDocumentNonBlocking(userTransactionsCollection, newTransaction);
 
 
     // Limpa o formulário

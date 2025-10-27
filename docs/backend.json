@@ -4,114 +4,72 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Transaction",
       "type": "object",
-      "description": "Represents a financial transaction, either an income (receita) or an expense (despesa).",
+      "description": "Representa uma transação financeira, seja uma receita ou uma despesa.",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the transaction."
+          "description": "Identificador único para a transação."
         },
         "userId": {
           "type": "string",
-          "description": "Reference to the User who created the transaction. (Relationship: User 1:N Transaction)"
+          "description": "ID do usuário que criou a transação."
         },
         "descricao": {
           "type": "string",
-          "description": "Description of the transaction (e.g., 'Salary', 'Rent', 'Groceries')."
+          "description": "Descrição da transação (ex: 'Salário', 'Aluguel')."
         },
         "valor": {
           "type": "number",
-          "description": "The amount of the transaction. Positive for income, negative for expenses.",
-          "format": "number"
+          "description": "O valor da transação."
         },
         "tipo": {
           "type": "string",
-          "description": "Type of the transaction: 'receita' (income) or 'despesa' (expense).",
-          "format": "string"
+          "description": "Tipo de transação: 'receita' ou 'despesa'.",
+          "enum": ["receita", "despesa"]
         },
         "data": {
           "type": "string",
-          "description": "Date and time of the transaction.",
-          "format": "date-time"
+          "format": "date-time",
+          "description": "Data e hora da transação."
         }
       },
-      "required": [
-        "id",
-        "userId",
-        "descricao",
-        "valor",
-        "tipo",
-        "data"
-      ]
+      "required": ["userId", "descricao", "valor", "tipo", "data"]
     },
     "User": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
+      "description": "Representa um usuário da aplicação.",
       "type": "object",
-      "description": "Represents a user of the application.",
       "properties": {
-        "id": {
+         "id": {
           "type": "string",
-          "description": "Unique identifier for the user."
+          "description": "O ID único do usuário, correspondente ao UID do Firebase Auth."
         }
       },
-      "required": [
-        "id"
-      ]
+      "required": ["id"]
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["anonymous"]
   },
   "firestore": {
     "structure": [
       {
-        "path": "artifacts/{appId}/users/{userId}/transactions/{transactionId}",
+        "path": "users/{userId}",
         "definition": {
-          "entityName": "Transaction",
-          "schema": {
-            "$ref": "#/backend/entities/Transaction"
-          },
-          "description": "Stores financial transactions for a specific user. Path-based ownership ensures that only the user with the matching 'userId' can access these transactions.",
-          "params": [
-            {
-              "name": "appId",
-              "description": "The unique identifier for the application instance."
-            },
-            {
-              "name": "userId",
-              "description": "The unique identifier for the user, corresponding to the Firebase Auth UID."
-            },
-            {
-              "name": "transactionId",
-              "description": "The unique identifier for the financial transaction."
-            }
-          ]
+          "entityName": "User",
+          "schema": { "$ref": "#/backend/entities/User" },
+          "description": "Armazena informações do perfil do usuário."
         }
       },
       {
-        "path": "artifacts/{appId}/users/{userId}",
+        "path": "users/{userId}/transactions/{transactionId}",
         "definition": {
-          "entityName": "User",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Stores user information. Only the user with the matching 'userId' can access this data.",
-          "params": [
-            {
-              "name": "appId",
-              "description": "The unique identifier for the application instance."
-            },
-            {
-              "name": "userId",
-              "description": "The unique identifier for the user, corresponding to the Firebase Auth UID."
-            }
-          ]
+          "entityName": "Transaction",
+          "schema": { "$ref": "#/backend/entities/Transaction" },
+          "description": "Armazena as transações financeiras de um usuário específico como uma subcoleção."
         }
       }
-    ],
-    "reasoning": "The data structure is designed to store financial transactions for users. To ensure security and scalability, the structure is optimized for path-based ownership, which simplifies security rules and enhances data privacy. Each user has a dedicated collection of transactions, ensuring that only the user can access their own data. This approach leverages Firestore's hierarchical data model effectively.\n\n*   **Authorization Independence:** The chosen structure `/artifacts/{appId}/users/{userId}/transactions/{transactionId}` inherently enforces authorization independence. Access to the `transactions` subcollection is solely determined by the `userId` derived from `request.auth.uid`. There is no need to fetch parent document data to authorize access to transactions.\n*   **QAPs Support:** List operations are secured because the path-based ownership ensures that listing transactions under `/artifacts/{appId}/users/{userId}/transactions` will only return transactions belonging to the authenticated user (`userId` matches `request.auth.uid`).\n*   **Denormalization:** There is no denormalization required. The transactions are user-owned; therefore authorization is achieved through path-based rules."
+    ]
   }
 }

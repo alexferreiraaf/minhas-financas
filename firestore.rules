@@ -3,101 +3,101 @@
  *
  * Core Philosophy:
  * This ruleset enforces a strict user-ownership model.  Users can only
- * access their own data.  Authorization is based on the `userId` found in
- * the document path.
+ * access data under their own user ID. This ensures data privacy and
+ * prevents unauthorized access.
  *
  * Data Structure:
- * The data is organized hierarchically under /artifacts/{appId}/users/{userId}/transactions/{transactionId}.
- * Each transaction is owned by a specific user.
+ * The data is organized hierarchically under `/artifacts/{appId}/users/{userId}`,
+ * with user data and transactions stored as subcollections. The `appId` allows for
+ * isolating data across different application instances, providing an extra layer
+ * of security and organization.
  *
  * Key Security Decisions:
- * - Listing all transactions across all users is disallowed. Only listing transactions
- *   for a specific user is permitted.
- * - Data shape validation is relaxed to facilitate rapid prototyping.  Only
- *   authorization-critical fields (e.g., `userId`) are validated.
- * - The `appId` parameter in the path is not validated in these rules, assuming it's managed
- *   and consistent within the application's deployment and not directly exposed to user input.
+ * - User listing is implicitly disallowed; there are no rules granting `list`
+ *   permission on the `/users` collection.
+ * - The default security posture is strict: any access not explicitly allowed
+ *   is denied.
+ * - Data validation is minimized in this prototyping phase to allow for rapid
+ *   schema iteration. Only critical authorization fields are validated.
+ *
+ * Denormalization for Authorization:
+ * No denormalization is required as the path-based ownership model naturally
+ * aligns with Firestore's security rules.  Authorization checks can be
+ * performed directly on the path without needing to read additional data.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the current user is signed in.
-     * @returns {boolean} True if the user is signed in, false otherwise.
+     * @description Checks if the request is authenticated.
+     * @return {boolean} True if the request is authenticated, false otherwise.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the provided userId matches the authenticated user's UID.
-     * @param {string} userId - The user ID to check.
-     * @returns {boolean} True if the userId matches the authenticated user's UID, false otherwise.
+     * @description Checks if the authenticated user is the owner of the resource.
+     * @param {string} userId The user ID to compare against the authenticated user's ID.
+     * @return {boolean} True if the user is the owner, false otherwise.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the provided userId matches the authenticated user's UID and the resource exists.
-     * @param {string} userId - The user ID to check.
-     * @returns {boolean} True if the userId matches the authenticated user's UID and the resource exists, false otherwise.
+     * @description Checks if the authenticated user is the owner of the resource, and that the resource exists.
+     * @param {string} userId The user ID to compare against the authenticated user's ID.
+     * @return {boolean} True if the user is the owner and the resource exists, false otherwise.
      */
     function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
+        return isOwner(userId) && resource != null;
     }
 
     /**
-     * @description Rules for /artifacts/{appId}/users/{userId}/transactions/{transactionId}
-     * @path /artifacts/{appId}/users/{userId}/transactions/{transactionId}
-     * @allow (create) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can create a new transaction under their own user ID.
-     * @allow (get) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can retrieve their own transaction.
-     * @allow (update) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can update their own transaction.
-     * @allow (delete) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can delete their own transaction.
-     * @deny (create) - Authenticated user 'attackerId' cannot create a transaction under another user's ID 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @deny (get) - Authenticated user 'attackerId' cannot retrieve a transaction belonging to another user 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @deny (update) - Authenticated user 'attackerId' cannot update a transaction belonging to another user 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @deny (delete) - Authenticated user 'attackerId' cannot delete a transaction belonging to another user 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @principle Enforces document ownership for writes.
-     */
-    match /artifacts/{appId}/users/{userId}/transactions/{transactionId} {
-      // Allow reads by the owner
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-
-      // Allow creation only if the userId matches the authenticated user's UID
-      allow create: if isOwner(userId) && request.resource.data.userId == userId;
-
-      // Allow updates and deletes only if the userId matches and the resource exists
-      allow update: if isExistingOwner(userId) && resource.data.userId == userId;
-      allow delete: if isExistingOwner(userId);
-    }
-
-    /**
-     * @description Rules for /artifacts/{appId}/users/{userId}
+     * @description Rules for documents in the /artifacts/{appId}/users/{userId} collection.
      * @path /artifacts/{appId}/users/{userId}
-     * @allow (create) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can create their user document.
-     * @allow (get) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can retrieve their user document.
-     * @allow (update) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can update their user document.
-     * @allow (delete) - Authenticated user 'efsyBj62qqeFnpAsFi107dQ6n022' can delete their user document.
-     * @deny (create) - Authenticated user 'attackerId' cannot create a user document for another user 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @deny (get) - Authenticated user 'attackerId' cannot retrieve a user document belonging to another user 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @deny (update) - Authenticated user 'attackerId' cannot update a user document belonging to another user 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @deny (delete) - Authenticated user 'attackerId' cannot delete a user document belonging to another user 'efsyBj62qqeFnpAsFi107dQ6n022'.
-     * @principle Enforces document ownership for writes.
+     * @allow (create) - A user can create their own user document if the userId in the path matches their auth UID and the user ID in the data also matches the auth UID.
+     * @allow (get) - A user can read their own user document.
+     * @allow (update) - A user can update their own user document.
+     * @allow (delete) - A user can delete their own user document.
+     * @deny (create) - A user cannot create a user document for another user.
+     * @deny (get) - A user cannot read another user's document.
+     * @deny (update) - A user cannot update another user's document.
+     * @deny (delete) - A user cannot delete another user's document.
+     * @principle Enforces document ownership for all operations.  A user can only
+     *          create, read, update, or delete their own user document.
      */
     match /artifacts/{appId}/users/{userId} {
-      // Allow reads by the owner
-      allow get: if isOwner(userId);
-      allow list: if false;
-
-      // Allow creation only if the userId matches the authenticated user's UID
       allow create: if isOwner(userId) && request.resource.data.id == userId;
-
-      // Allow updates and deletes only if the userId matches and the resource exists
-      allow update: if isExistingOwner(userId) && resource.data.id == userId;
+      allow get: if isOwner(userId);
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
       allow delete: if isExistingOwner(userId);
+      allow list: if false;
+    }
+
+    /**
+     * @description Rules for documents in the /artifacts/{appId}/users/{userId}/transactions/{transactionId} collection.
+     * @path /artifacts/{appId}/users/{userId}/transactions/{transactionId}
+     * @allow (create) - A user can create a transaction in their own transactions collection if the userId in the path matches their auth UID.
+     * @allow (get) - A user can read a transaction in their own transactions collection.
+     * @allow (update) - A user can update a transaction in their own transactions collection.
+     * @allow (delete) - A user can delete a transaction in their own transactions collection.
+     * @allow (list) - A user can list transactions in their own transactions collection.
+     * @deny (create) - A user cannot create a transaction for another user.
+     * @deny (get) - A user cannot read another user's transaction.
+     * @deny (update) - A user cannot update another user's transaction.
+     * @deny (delete) - A user cannot delete another user's transaction.
+     * @principle Enforces document ownership for all operations.  A user can only
+     *          create, read, update, or delete transactions in their own transactions collection.
+     */
+    match /artifacts/{appId}/users/{userId}/transactions/{transactionId} {
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow get: if isOwner(userId);
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isExistingOwner(userId);
+      allow list: if isOwner(userId);
     }
   }
 }
