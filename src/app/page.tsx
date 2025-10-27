@@ -19,8 +19,10 @@ export default function FinancyCanvas() {
   
   const transactionsQuery = useMemoFirebase(() => {
       if (!firestore || !user) return null;
-      const coll = collection(firestore, `users/${user.uid}/transactions`);
-      return query(coll, orderBy('data', 'desc'));
+      // Query the root 'transactions' collection
+      const coll = collection(firestore, 'transactions');
+      // Filter transactions by the current user's ID
+      return query(coll, where('userId', '==', user.uid), orderBy('data', 'desc'));
   }, [firestore, user]);
 
   const { data: transactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
@@ -94,7 +96,8 @@ export default function FinancyCanvas() {
       data: serverTimestamp(),
     };
 
-    const transactionsCollection = collection(firestore, `users/${user.uid}/transactions`);
+    // Save to the root 'transactions' collection
+    const transactionsCollection = collection(firestore, 'transactions');
     addDocumentNonBlocking(transactionsCollection, newTransaction);
 
 
@@ -269,5 +272,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
