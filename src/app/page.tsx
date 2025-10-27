@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -216,7 +217,7 @@ export default function FinancyCanvas() {
           <div className="flex justify-between items-start sm:items-center mb-4 flex-col sm:flex-row">
             <h1 className="text-2xl font-extrabold text-foreground flex items-center mb-2 sm:mb-0">
               <CreditCard className="w-6 h-6 mr-2 text-primary" />
-              Financy Canvas
+              Minhas Finanças
             </h1>
             <div className="flex items-center space-x-2">
               <span className="text-xs text-muted-foreground flex items-center">
@@ -477,3 +478,5 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
