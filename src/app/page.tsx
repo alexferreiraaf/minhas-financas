@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2 } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
-import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
-import { collection, query, orderBy, serverTimestamp, where } from 'firebase/firestore';
+import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
+import { collection, query, orderBy, serverTimestamp, doc } from 'firebase/firestore';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -29,6 +30,7 @@ export default function FinancyCanvas() {
   const [showModal, setShowModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showExpenseDetails, setShowExpenseDetails] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
@@ -107,6 +109,15 @@ export default function FinancyCanvas() {
     setError('');
     setIsSubmitting(false);
   };
+
+  const handleDeleteTransaction = () => {
+    if (!user || !firestore || !transactionToDelete) return;
+
+    const transactionRef = doc(firestore, 'users', user.uid, 'transactions', transactionToDelete);
+    deleteDocumentNonBlocking(transactionRef);
+    setTransactionToDelete(null);
+  };
+
 
   const openModal = (type: 'receita' | 'despesa') => {
     setFormType(type);
@@ -206,7 +217,7 @@ export default function FinancyCanvas() {
                 {transactions && transactions.map((t) => (
                   <li
                     key={t.id}
-                    className={`flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 
+                    className={`group flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 
                       ${t.tipo === 'receita' ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50' : 'border-red-400 bg-red-50/50 hover:bg-red-50'}`}
                   >
                     <div className="flex items-center">
@@ -220,9 +231,19 @@ export default function FinancyCanvas() {
                         </p>
                       </div>
                     </div>
-                    <p className={`font-semibold ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'} flex-shrink-0 ml-4`}>
-                      {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
-                    </p>
+                    <div className="flex items-center flex-shrink-0 ml-4">
+                      <p className={`font-semibold ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => setTransactionToDelete(t.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -350,6 +371,23 @@ export default function FinancyCanvas() {
             </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      <AlertDialog open={!!transactionToDelete} onOpenChange={(isOpen) => !isOpen && setTransactionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. Isso excluirá permanentemente sua transação de nossos servidores.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setTransactionToDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTransaction}>Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
+    
