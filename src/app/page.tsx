@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
 
 import { Button } from '@/components/ui/button';
@@ -137,20 +137,24 @@ export default function FinancyCanvas() {
           </p>
         </header>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <Button
-            onClick={() => { setFormType('receita'); setShowModal(true); setError('') }}
             className="w-full p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <ArrowUp className="w-5 h-5 mr-2" />
-            Adicionar Receita
+            Entradas
           </Button>
           <Button
-            onClick={() => { setFormType('despesa'); setShowModal(true); setError('') }}
             className="w-full p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <ArrowDown className="w-5 h-5 mr-2" />
-            Adicionar Despesa
+            Saídas
+          </Button>
+          <Button
+            className="w-full p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
+          >
+            <PieChart className="w-5 h-5 mr-2" />
+            Relatório
           </Button>
         </div>
 
