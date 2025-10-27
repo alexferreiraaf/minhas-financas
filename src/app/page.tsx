@@ -32,7 +32,7 @@ export default function FinancyCanvas() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!Object.keys(FIREBASE_CONFIG).length || !FIREBASE_CONFIG.projectId) {
+    if (!FIREBASE_CONFIG.projectId) {
       setError("Configuração do Firebase ausente. O aplicativo não pode ser iniciado. Por favor, vincule um projeto Firebase.");
       setIsLoading(false);
       return;
@@ -60,7 +60,7 @@ export default function FinancyCanvas() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthReady || !db || !userId || !FIREBASE_CONFIG.projectId) return;
+    if (!isAuthReady || !db || !userId) return;
 
     const collectionPath = `users/${userId}/transactions`;
     const transactionsCollection = collection(db as Firestore, collectionPath);
