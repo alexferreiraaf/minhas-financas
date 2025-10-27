@@ -1,12 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, type Firestore } from 'firebase/firestore';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle } from 'lucide-react';
-import { auth, db } from '@/lib/firebase';
-import { FIREBASE_CONFIG } from '@/lib/firebase-config';
-import type { Transaction, FirestoreTransaction } from '@/lib/types';
+import type { Transaction } from '@/lib/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,11 +11,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
+const mockTransactions: Transaction[] = [
+  { id: '1', descricao: 'Salário', valor: 3500, tipo: 'receita', data: new Date('2024-05-05T10:00:00Z') },
+  { id: '2', descricao: 'Aluguel', valor: 1200, tipo: 'despesa', data: new Date('2024-05-06T11:00:00Z') },
+  { id: '3', descricao: 'Supermercado', valor: 450, tipo: 'despesa', data: new Date('2024-05-07T15:30:00Z') },
+  { id: '4', descricao: 'Venda de item usado', valor: 250, tipo: 'receita', data: new Date('2024-05-08T18:00:00Z') },
+];
 
 export default function FinancyCanvas() {
-  const [userId, setUserId] = useState<string | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [balance, setBalance] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,75 +31,19 @@ export default function FinancyCanvas() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!FIREBASE_CONFIG.projectId) {
-      setError("Configuração do Firebase ausente. O aplicativo não pode ser iniciado. Por favor, vincule um projeto Firebase.");
-      setIsLoading(false);
-      return;
-    }
-    if (!auth) {
-        setError("Falha na inicialização da autenticação do Firebase.");
+    // Simula o carregamento dos dados
+    setTimeout(() => {
+        const sortedTransactions = mockTransactions.sort((a, b) => b.data.getTime() - a.data.getTime());
+        setTransactions(sortedTransactions);
+        
+        const currentBalance = sortedTransactions.reduce((acc, t) => {
+            return t.tipo === 'receita' ? acc + t.valor : acc - t.valor;
+        }, 0);
+        setBalance(currentBalance);
+
         setIsLoading(false);
-        return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUserId(user.uid);
-      } else {
-        try {
-          await signInAnonymously(auth);
-        } catch (e: any) {
-          setError(`Falha na autenticação anônima: ${e.message}`);
-        }
-      }
-      setIsAuthReady(true);
-    });
-
-    return () => unsubscribe();
+    }, 1000);
   }, []);
-
-  useEffect(() => {
-    if (!isAuthReady || !db || !userId) return;
-
-    const collectionPath = `users/${userId}/transactions`;
-    const transactionsCollection = collection(db as Firestore, collectionPath);
-    const q = query(transactionsCollection, orderBy('data', 'desc'));
-
-    setIsLoading(true);
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedTransactions: Transaction[] = snapshot.docs.map(doc => {
-        const data = doc.data() as FirestoreTransaction;
-        return {
-          id: doc.id,
-          ...data,
-          data: data.data.toDate(),
-        };
-      });
-
-      const currentBalance = fetchedTransactions.reduce((acc, t) => {
-        return t.tipo === 'receita' ? acc + t.valor : acc - t.valor;
-      }, 0);
-
-      setTransactions(fetchedTransactions);
-      setBalance(currentBalance);
-      setIsLoading(false);
-      setError('');
-
-    }, (err) => {
-      console.error("Erro ao buscar transações: ", err);
-      let errorMessage = "Não foi possível carregar as transações. ";
-      if (err.message.includes("permission-denied") || err.message.includes("PERMISSION_DENIED")) {
-        errorMessage += "Verifique as regras de segurança do Firestore. A regra para leitura pode estar incorreta."
-      } else {
-        errorMessage += "Verifique sua conexão e a configuração do Firestore."
-      }
-      setError(errorMessage);
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [isAuthReady, userId]);
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -121,12 +64,8 @@ export default function FinancyCanvas() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!db || !userId) {
-      setError("Sistema não está pronto. Tente novamente.");
-      return;
-    }
-
     setIsSubmitting(true);
+    
     const numericValue = parseFloat(value.replace(/\./g, '').replace(',', '.'));
 
     if (description.trim() === '' || isNaN(numericValue) || numericValue <= 0) {
@@ -135,36 +74,30 @@ export default function FinancyCanvas() {
       return;
     }
 
-    try {
-      const transactionData = {
-        descricao: description.trim(),
-        valor: numericValue,
-        tipo: formType,
-        data: serverTimestamp(),
-      };
+    const newTransaction: Transaction = {
+      id: new Date().toISOString(),
+      descricao: description.trim(),
+      valor: numericValue,
+      tipo: formType,
+      data: new Date(),
+    };
 
-      const collectionPath = `users/${userId}/transactions`;
-      await addDoc(collection(db, collectionPath), transactionData);
+    // Atualiza o estado local
+    const updatedTransactions = [newTransaction, ...transactions].sort((a, b) => b.data.getTime() - a.data.getTime());
+    setTransactions(updatedTransactions);
+    
+    const newBalance = formType === 'receita' ? balance + numericValue : balance - numericValue;
+    setBalance(newBalance);
 
-      setDescription('');
-      setValue('');
-      setShowModal(false);
-      setError('');
-    } catch (e: any) {
-      console.error("Erro ao adicionar transação: ", e);
-      let errorMessage = "Erro ao salvar transação. ";
-       if (e.message.includes("permission-denied") || e.message.includes("PERMISSION_DENIED")) {
-        errorMessage += "Verifique as regras de segurança do Firestore. A regra para escrita pode estar incorreta."
-      } else {
-        errorMessage += "Tente novamente."
-      }
-      setError(errorMessage);
-    } finally {
-      setIsSubmitting(false);
-    }
+    // Limpa o formulário
+    setDescription('');
+    setValue('');
+    setShowModal(false);
+    setError('');
+    setIsSubmitting(false);
   };
 
-  if (!isAuthReady || (isLoading && isAuthReady)) {
+  if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-background">
         <Loader className="animate-spin text-primary mb-4" size={48} />
@@ -172,20 +105,6 @@ export default function FinancyCanvas() {
       </div>
     );
   }
-  
-  if (error && (!FIREBASE_CONFIG.projectId || error.includes("ausente"))) {
-    return (
-      <div className="flex items-center justify-center min-h-screen p-4">
-        <Alert variant="destructive" className="max-w-lg">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Configuração Incompleta</AlertTitle>
-            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
-            <Button onClick={() => window.location.reload()} className='mt-4'>Vincular Projeto Firebase</Button>
-        </Alert>
-      </div>
-    );
-  }
-
 
   const BalanceIcon = formType === 'receita' ? ArrowUp : ArrowDown;
   const modalTitle = formType === 'receita' ? 'Adicionar Receita' : 'Adicionar Despesa';
@@ -194,7 +113,7 @@ export default function FinancyCanvas() {
   return (
     <div className="min-h-screen bg-background p-4 sm:p-8 font-body">
       <div className="max-w-xl mx-auto">
-        {error && (
+        {error && !showModal && (
             <Alert variant="destructive" className="mb-4">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Ops! Ocorreu um Erro</AlertTitle>
@@ -207,12 +126,10 @@ export default function FinancyCanvas() {
               <CreditCard className="w-6 h-6 mr-2 text-primary" />
               Financy Canvas
             </h1>
-            {userId && (
-              <span className="text-xs text-muted-foreground flex items-center">
-                <Users className="w-3 h-3 mr-1" />
-                ID: {userId.substring(0, 8)}...
-              </span>
-            )}
+            <span className="text-xs text-muted-foreground flex items-center">
+              <Users className="w-3 h-3 mr-1" />
+              Local Mode
+            </span>
           </div>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Saldo Atual</h2>
           <p className={`text-4xl font-bold mt-1 transition-colors duration-300 ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
