@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
 import { collection, query, serverTimestamp, doc } from 'firebase/firestore';
+import { isThisWeek, isThisMonth, isThisYear, parseISO } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +15,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ThemeToggleButton } from '@/components/theme-toggle';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
 
 export default function FinancyCanvas() {
   const { firestore, auth } = useFirebase();
@@ -36,6 +39,11 @@ export default function FinancyCanvas() {
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // State for report filtering
+  const [reportPeriod, setReportPeriod] = useState<'week' | 'month' | 'year' | 'all'>('all');
+  const [reportSearchTerm, setReportSearchTerm] = useState('');
+
 
   // Client-side sorting because orderBy is not in the query
   const transactions = useMemo(() => {
@@ -64,6 +72,39 @@ export default function FinancyCanvas() {
     const currentBalance = receitas - despesasTotal;
     return { balance: currentBalance, totalReceitas: receitas, totalDespesas: despesasTotal, despesas: despesasTransations };
   }, [transactions]);
+
+  const filteredDespesas = useMemo(() => {
+    let filtered = despesas;
+
+    if (reportSearchTerm) {
+      filtered = filtered.filter(d => d.descricao.toLowerCase().includes(reportSearchTerm.toLowerCase()));
+    }
+
+    if (reportPeriod !== 'all') {
+      filtered = filtered.filter(d => {
+        const transactionDate = d.data?.toDate();
+        if (!transactionDate) return false;
+        
+        switch (reportPeriod) {
+          case 'week':
+            return isThisWeek(transactionDate, { weekStartsOn: 1 });
+          case 'month':
+            return isThisMonth(transactionDate);
+          case 'year':
+            return isThisYear(transactionDate);
+          default:
+            return true;
+        }
+      });
+    }
+
+    return filtered;
+  }, [despesas, reportPeriod, reportSearchTerm]);
+
+  const filteredTotalDespesas = useMemo(() => {
+    return filteredDespesas.reduce((acc, d) => acc + d.valor, 0);
+  }, [filteredDespesas]);
+
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -137,9 +178,11 @@ export default function FinancyCanvas() {
   
   const handleCloseReportModal = () => {
     setShowReportModal(false);
-    // Use a timeout to reset the detail view after the modal closes
+    // Use a timeout to reset views after the modal closes
     setTimeout(() => {
         setShowExpenseDetails(false);
+        setReportPeriod('all');
+        setReportSearchTerm('');
     }, 300);
   };
 
@@ -313,7 +356,7 @@ export default function FinancyCanvas() {
       </Dialog>
 
       <Dialog open={showReportModal} onOpenChange={handleCloseReportModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
             <DialogHeader>
                 {showExpenseDetails ? (
                     <div className="flex items-center">
@@ -333,26 +376,59 @@ export default function FinancyCanvas() {
             </DialogHeader>
 
             {showExpenseDetails ? (
-                <div className="max-h-[60vh] overflow-y-auto py-4 pr-2">
-                    <ul className="space-y-3">
-                        {despesas.map(d => (
-                            <li key={d.id} className="flex justify-between items-start p-3 bg-red-50/50 dark:bg-red-900/20 rounded-lg">
-                                <div>
-                                    <p className="font-medium text-red-800 dark:text-red-300">{d.descricao}</p>
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        {d.data?.toDate().toLocaleString('pt-BR', {
-                                            day: '2-digit',
-                                            month: '2-digit',
-                                            year: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
-                                    </p>
-                                </div>
-                                <p className="font-semibold text-red-600 dark:text-red-400 whitespace-nowrap ml-4">{formatCurrency(d.valor)}</p>
-                            </li>
-                        ))}
-                    </ul>
+                <div className="py-4 pr-2">
+                    <div className="flex flex-col space-y-4">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input 
+                                placeholder="Filtrar por descrição..."
+                                value={reportSearchTerm}
+                                onChange={(e) => setReportSearchTerm(e.target.value)}
+                                className="pl-10"
+                            />
+                             {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
+                        </div>
+                        <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
+                            <TabsList className="grid w-full grid-cols-4">
+                                <TabsTrigger value="all">Total</TabsTrigger>
+                                <TabsTrigger value="week">Semana</TabsTrigger>
+                                <TabsTrigger value="month">Mês</TabsTrigger>
+                                <TabsTrigger value="year">Ano</TabsTrigger>
+                            </TabsList>
+                        </Tabs>
+                        <div className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/30 rounded-lg">
+                           <span className="font-medium text-red-700 dark:text-red-300">Total Filtrado</span>
+                           <span className="font-bold text-lg text-red-600 dark:text-red-400">{formatCurrency(filteredTotalDespesas)}</span>
+                       </div>
+
+                        <div className="max-h-[40vh] overflow-y-auto pr-2">
+                          {filteredDespesas.length > 0 ? (
+                            <ul className="space-y-3">
+                                {filteredDespesas.map(d => (
+                                    <li key={d.id} className="flex justify-between items-start p-3 bg-card border-l-4 border-red-400 rounded-lg">
+                                        <div>
+                                            <p className="font-medium text-red-800 dark:text-red-300">{d.descricao}</p>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                {d.data?.toDate().toLocaleString('pt-BR', {
+                                                    day: '2-digit',
+                                                    month: '2-digit',
+                                                    year: 'numeric',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit'
+                                                })}
+                                            </p>
+                                        </div>
+                                        <p className="font-semibold text-red-600 dark:text-red-400 whitespace-nowrap ml-4">{formatCurrency(d.valor)}</p>
+                                    </li>
+                                ))}
+                            </ul>
+                          ) : (
+                            <div className="text-center py-10 text-muted-foreground">
+                              <p>Nenhuma despesa encontrada para os filtros selecionados.</p>
+                            </div>
+                          )}
+                        </div>
+                    </div>
                 </div>
             ) : (
                 <div className="space-y-4 py-4">
@@ -376,7 +452,7 @@ export default function FinancyCanvas() {
             
             <DialogFooter>
                 {showExpenseDetails ? (
-                    <Button onClick={() => setShowExpenseDetails(false)} variant="outline">Voltar</Button>
+                    <Button onClick={() => setShowExpenseDetails(false)} variant="outline">Voltar ao Resumo</Button>
                 ) : (
                     <Button onClick={handleCloseReportModal} variant="outline">Fechar</Button>
                 )}
