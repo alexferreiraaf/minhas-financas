@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
+import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
+import { collection, query, orderBy, serverTimestamp, where } from 'firebase/firestore';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,17 +13,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-const mockTransactions: Transaction[] = [
-  { id: '1', descricao: 'Salário', valor: 3500, tipo: 'receita', data: new Date('2024-05-05T10:00:00Z') },
-  { id: '2', descricao: 'Aluguel', valor: 1200, tipo: 'despesa', data: new Date('2024-05-06T11:00:00Z') },
-  { id: '3', descricao: 'Supermercado', valor: 450, tipo: 'despesa', data: new Date('2024-05-07T15:30:00Z') },
-  { id: '4', descricao: 'Venda de item usado', valor: 250, tipo: 'receita', data: new Date('2024-05-08T18:00:00Z') },
-];
-
 export default function FinancyCanvas() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const { firestore, auth } = useFirebase();
+  const { user, isUserLoading } = useUser();
+  
+  const transactionsQuery = useMemoFirebase(() => {
+      if (!firestore || !user) return null;
+      const coll = collection(firestore, 'transactions');
+      return query(coll, where('userId', '==', user.uid), orderBy('data', 'desc'));
+  }, [firestore, user]);
+
+  const { data: transactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
+
   const [balance, setBalance] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [showModal, setShowModal] = useState(false);
@@ -31,19 +35,21 @@ export default function FinancyCanvas() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // Simula o carregamento dos dados
-    setTimeout(() => {
-        const sortedTransactions = mockTransactions.sort((a, b) => b.data.getTime() - a.data.getTime());
-        setTransactions(sortedTransactions);
-        
-        const currentBalance = sortedTransactions.reduce((acc, t) => {
-            return t.tipo === 'receita' ? acc + t.valor : acc - t.valor;
-        }, 0);
-        setBalance(currentBalance);
+    if (!isUserLoading && !user && auth) {
+      initiateAnonymousSignIn(auth);
+    }
+  }, [isUserLoading, user, auth]);
 
-        setIsLoading(false);
-    }, 1000);
-  }, []);
+  useEffect(() => {
+    if (transactions) {
+      const currentBalance = transactions.reduce((acc, t) => {
+        return t.tipo === 'receita' ? acc + t.valor : acc - t.valor;
+      }, 0);
+      setBalance(currentBalance);
+    } else {
+      setBalance(0);
+    }
+  }, [transactions]);
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -64,6 +70,12 @@ export default function FinancyCanvas() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!user || !firestore) {
+      setError("Autenticação ou banco de dados não estão prontos.");
+      return;
+    }
+
     setIsSubmitting(true);
     
     const numericValue = parseFloat(value.replace(/\./g, '').replace(',', '.'));
@@ -74,20 +86,17 @@ export default function FinancyCanvas() {
       return;
     }
 
-    const newTransaction: Transaction = {
-      id: new Date().toISOString(),
+    const newTransaction = {
+      userId: user.uid,
       descricao: description.trim(),
       valor: numericValue,
       tipo: formType,
-      data: new Date(),
+      data: serverTimestamp(),
     };
 
-    // Atualiza o estado local
-    const updatedTransactions = [newTransaction, ...transactions].sort((a, b) => b.data.getTime() - a.data.getTime());
-    setTransactions(updatedTransactions);
-    
-    const newBalance = formType === 'receita' ? balance + numericValue : balance - numericValue;
-    setBalance(newBalance);
+    const transactionsCollection = collection(firestore, 'transactions');
+    addDocumentNonBlocking(transactionsCollection, newTransaction);
+
 
     // Limpa o formulário
     setDescription('');
@@ -96,6 +105,13 @@ export default function FinancyCanvas() {
     setError('');
     setIsSubmitting(false);
   };
+
+  const openModal = (type: 'receita' | 'despesa') => {
+    setFormType(type);
+    setShowModal(true);
+  }
+
+  const isLoading = isUserLoading || isLoadingTransactions;
 
   if (isLoading) {
     return (
@@ -110,14 +126,16 @@ export default function FinancyCanvas() {
   const modalTitle = formType === 'receita' ? 'Adicionar Receita' : 'Adicionar Despesa';
   const modalColor = formType === 'receita' ? 'text-emerald-500' : 'text-red-500';
 
+  const pageError = transactionsError || error;
+
   return (
     <div className="min-h-screen bg-background p-4 sm:p-8 font-body">
       <div className="max-w-xl mx-auto">
-        {error && !showModal && (
+        {pageError && !showModal && (
             <Alert variant="destructive" className="mb-4">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Ops! Ocorreu um Erro</AlertTitle>
-                <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
+                <AlertDescription className="font-mono text-xs">{pageError.message}</AlertDescription>
             </Alert>
         )}
         <header className="mb-8 p-6 bg-card rounded-2xl shadow-lg border-t-4 border-primary">
@@ -128,7 +146,7 @@ export default function FinancyCanvas() {
             </h1>
             <span className="text-xs text-muted-foreground flex items-center">
               <Users className="w-3 h-3 mr-1" />
-              Local Mode
+              {user ? user.uid.substring(0,6) : '...'}
             </span>
           </div>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Saldo Atual</h2>
@@ -139,12 +157,14 @@ export default function FinancyCanvas() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <Button
+            onClick={() => openModal('receita')}
             className="w-full p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <ArrowUp className="w-5 h-5 mr-2" />
             Entradas
           </Button>
           <Button
+            onClick={() => openModal('despesa')}
             className="w-full p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <ArrowDown className="w-5 h-5 mr-2" />
@@ -163,7 +183,7 @@ export default function FinancyCanvas() {
             <CardTitle>Histórico de Transações</CardTitle>
           </CardHeader>
           <CardContent>
-            {transactions.length === 0 ? (
+            {transactions && transactions.length === 0 ? (
               <div className="py-10 text-center text-muted-foreground">
                 <CreditCard className="w-10 h-10 mx-auto mb-3" />
                 <p>Nenhuma transação registrada.</p>
@@ -171,7 +191,7 @@ export default function FinancyCanvas() {
               </div>
             ) : (
               <ul className="space-y-3">
-                {transactions.map((t) => (
+                {transactions && transactions.map((t) => (
                   <li
                     key={t.id}
                     className={`flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 
@@ -184,7 +204,7 @@ export default function FinancyCanvas() {
                       <div>
                         <p className="font-medium text-foreground leading-tight">{t.descricao}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {t.data.toLocaleDateString('pt-BR', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                       </div>
                     </div>

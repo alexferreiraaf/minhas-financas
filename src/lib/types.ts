@@ -1,8 +1,11 @@
+import type { Timestamp } from 'firebase/firestore';
+
 // Type for client-side transaction data
 export interface Transaction {
   id: string;
+  userId: string;
   descricao: string;
   valor: number;
   tipo: 'receita' | 'despesa';
-  data: Date;
+  data: Timestamp;
 }
