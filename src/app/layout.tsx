@@ -8,7 +8,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'Financy Canvas',
+  title: 'Minhas Finanças',
   description: 'Seu controle financeiro, simplificado.',
   manifest: '/manifest.webmanifest',
 };
@@ -21,10 +21,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full`} suppressHydrationWarning>
       <head>
-          <meta name="application-name" content="Financy Canvas" />
+          <meta name="application-name" content="Minhas Finanças" />
           <meta name="apple-mobile-web-app-capable" content="yes" />
           <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-          <meta name="apple-mobile-web-app-title" content="Financy" />
+          <meta name="apple-mobile-web-app-title" content="Minhas Finanças" />
           <meta name="format-detection" content="telephone=no" />
           <meta name="mobile-web-app-capable" content="yes" />
           <meta name="msapplication-config" content="/icons/browserconfig.xml" />
