@@ -8,7 +8,7 @@ import { collection, query, orderBy, serverTimestamp, where } from 'firebase/fir
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -19,16 +19,15 @@ export default function FinancyCanvas() {
   
   const transactionsQuery = useMemoFirebase(() => {
       if (!firestore || !user) return null;
-      // Query the user's specific transactions subcollection
       return query(collection(firestore, 'users', user.uid, 'transactions'), orderBy('data', 'desc'));
   }, [firestore, user]);
 
   const { data: rawTransactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
 
-  const [balance, setBalance] = useState(0);
   const [error, setError] = useState('');
 
   const [showModal, setShowModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
@@ -43,15 +42,14 @@ export default function FinancyCanvas() {
     }
   }, [isUserLoading, user, auth]);
 
-  useEffect(() => {
-    if (transactions) {
-      const currentBalance = transactions.reduce((acc, t) => {
-        return t.tipo === 'receita' ? acc + t.valor : acc - t.valor;
-      }, 0);
-      setBalance(currentBalance);
-    } else {
-      setBalance(0);
+  const { balance, totalReceitas, totalDespesas } = useMemo(() => {
+    if (!transactions) {
+      return { balance: 0, totalReceitas: 0, totalDespesas: 0 };
     }
+    const receitas = transactions.filter(t => t.tipo === 'receita').reduce((acc, t) => acc + t.valor, 0);
+    const despesas = transactions.filter(t => t.tipo === 'despesa').reduce((acc, t) => acc + t.valor, 0);
+    const currentBalance = receitas - despesas;
+    return { balance: currentBalance, totalReceitas: receitas, totalDespesas: despesas };
   }, [transactions]);
 
   const formatCurrency = useCallback((amount: number) => {
@@ -90,7 +88,6 @@ export default function FinancyCanvas() {
     }
 
     const newTransaction = {
-      // userId is implicitly known from the collection path, but can be kept for redundancy if needed
       userId: user.uid,
       descricao: description.trim(),
       valor: numericValue,
@@ -98,12 +95,10 @@ export default function FinancyCanvas() {
       data: serverTimestamp(),
     };
 
-    // Save to the user's specific transactions subcollection
     const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
     addDocumentNonBlocking(userTransactionsCollection, newTransaction);
 
 
-    // Limpa o formulário
     setDescription('');
     setValue('');
     setShowModal(false);
@@ -176,6 +171,7 @@ export default function FinancyCanvas() {
             Saídas
           </Button>
           <Button
+            onClick={() => setShowReportModal(true)}
             className="w-full p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <PieChart className="w-5 h-5 mr-2" />
@@ -269,6 +265,34 @@ export default function FinancyCanvas() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showReportModal} onOpenChange={setShowReportModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-blue-500">Relatório Financeiro</DialogTitle>
+            <DialogDescription>
+              Resumo das suas movimentações financeiras.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
+              <span className="font-medium text-emerald-700">Total de Receitas</span>
+              <span className="font-bold text-lg text-emerald-600">{formatCurrency(totalReceitas)}</span>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+              <span className="font-medium text-red-700">Total de Despesas</span>
+              <span className="font-bold text-lg text-red-600">{formatCurrency(totalDespesas)}</span>
+            </div>
+            <div className="flex justify-between items-center p-4 bg-card border-t-2 mt-4 rounded-lg">
+              <span className="font-bold text-foreground">Saldo Final</span>
+              <span className={`font-extrabold text-xl ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowReportModal(false)} variant="outline">Fechar</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
