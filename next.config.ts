@@ -1,4 +1,12 @@
 import type {NextConfig} from 'next';
+import pwa from 'next-pwa';
+
+const withPWA = pwa({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+  disable: process.env.NODE_ENV === 'development'
+});
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -32,4 +40,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withPWA(nextConfig);

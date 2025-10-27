@@ -203,8 +203,8 @@ export default function FinancyCanvas() {
   const pageError = transactionsError || error;
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-8 font-body">
-      <div className="max-w-xl mx-auto">
+    <div className="min-h-screen bg-background p-4 sm:p-6 md:p-8 font-body">
+      <div className="max-w-4xl mx-auto">
         {pageError && !showModal && (
             <Alert variant="destructive" className="mb-4">
                 <AlertTriangle className="h-4 w-4" />
@@ -212,9 +212,9 @@ export default function FinancyCanvas() {
                 <AlertDescription className="font-mono text-xs">{typeof pageError === 'string' ? pageError : pageError.message}</AlertDescription>
             </Alert>
         )}
-        <header className="mb-8 p-6 bg-card rounded-2xl shadow-lg border-t-4 border-primary">
-          <div className="flex justify-between items-center mb-4">
-            <h1 className="text-2xl font-extrabold text-foreground flex items-center">
+        <header className="mb-8 p-4 sm:p-6 bg-card rounded-2xl shadow-lg border-t-4 border-primary">
+          <div className="flex justify-between items-start sm:items-center mb-4 flex-col sm:flex-row">
+            <h1 className="text-2xl font-extrabold text-foreground flex items-center mb-2 sm:mb-0">
               <CreditCard className="w-6 h-6 mr-2 text-primary" />
               Financy Canvas
             </h1>
