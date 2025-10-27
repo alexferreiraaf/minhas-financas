@@ -1,70 +1,94 @@
+/**
+ * @fileoverview Firestore Security Rules for the application.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model.  Users can only read and write their own data. Data validation is relaxed for rapid prototyping.
+ *
+ * Data Structure:
+ * - /users/{userId}: Stores user profile information.
+ * - /users/{userId}/transactions/{transactionId}: Stores financial transactions for a specific user as a subcollection.
+ *
+ * Key Security Decisions:
+ * - Users can only access their own transactions data.
+ * - Data validation is minimized to allow for flexible data shapes during prototyping.
+ * - Listing all users is not permitted.
+ *
+ * Denormalization for Authorization:
+ * The 'Transaction' entity requires a `userId` field, which is used to match transactions to users, to prevent costly `get()` operations.
+ */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description This ruleset enforces a strict user-ownership model for user profiles and their transactions.
-     * @dataStructure All user data is stored under `/users/{userId}`, with transactions as a subcollection.
-     * @keySecurityDecisions Users can only access their own data. No listing of all users is allowed.
-     * @denormalizationForAuthorization The `userId` is present on both the `/users/{userId}` document and the `/users/{userId}/transactions/{transactionId}` documents, enabling direct authorization checks.
-     * @structuralSegregation Private user data and transactions are stored under the user's specific path.
-     */
-
-    // Helper function to check if the user is signed in
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Helper function to check if the authenticated user ID matches the requested user ID
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    // Helper function to check if the authenticated user is the owner of an existing document
-    function isExistingOwner(userId) {
-      return isSignedIn() && resource.data.userId == request.auth.uid;
-    }
-
-    /**
-     * @description Controls access to user profile documents.
-     * @path /users/{userId}
-     * @allow (create) User 'abc' can create their own profile if request.auth.uid == 'abc'.
-     * @deny (create) User 'def' cannot create a profile for user 'abc'.
-     * @allow (get) User 'abc' can read their own profile.
-     * @deny (get) User 'def' cannot read user 'abc' profile.
-     * @allow (update) User 'abc' can update their own profile.
-     * @deny (update) User 'def' cannot update user 'abc' profile.
-     * @allow (delete) User 'abc' can delete their own profile.
-     * @deny (delete) User 'def' cannot delete user 'abc' profile.
-     * @principle Enforces document ownership, allowing users to manage only their own profiles.
+     * @description Rules for the /users/{userId} document.
+     * @path /databases/{database}/documents/users/{userId}
+     * @allow (create) User with UID 'userId' can create their own user document.
+     * @allow (get) User with UID 'userId' can read their own user document.
+     * @allow (update) User with UID 'userId' can update their own user document.
+     * @allow (delete) User with UID 'userId' can delete their own user document.
+     * @deny (create) User with UID 'anotherUserId' cannot create a user document with ID 'userId'.
+     * @deny (get) User with UID 'anotherUserId' cannot read user document 'userId'.
+     * @deny (update) User with UID 'anotherUserId' cannot update user document 'userId'.
+     * @deny (delete) User with UID 'anotherUserId' cannot delete user document 'userId'.
+     * @principle Enforces document ownership for user profiles.
      */
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isExistingOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
       allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Controls access to transaction documents within a user's subcollection.
-     * @path /users/{userId}/transactions/{transactionId}
-     * @allow (create) User 'abc' can create a transaction under their profile if request.auth.uid == 'abc'.
-     * @deny (create) User 'def' cannot create a transaction under user 'abc' profile.
-     * @allow (get) User 'abc' can read a transaction under their own profile.
-     * @deny (get) User 'def' cannot read a transaction under user 'abc' profile.
-     * @allow (update) User 'abc' can update a transaction under their own profile.
-     * @deny (update) User 'def' cannot update user 'abc' profile.
-     * @allow (delete) User 'abc' can delete a transaction under their own profile.
-     * @deny (delete) User 'def' cannot delete user 'abc' profile.
-     * @principle Enforces document ownership, allowing users to manage only their own transactions.
+     * @description Rules for the /users/{userId}/transactions/{transactionId} collection.
+     * @path /databases/{database}/documents/users/{userId}/transactions/{transactionId}
+     * @allow (create) User with UID 'userId' can create a transaction in their own transaction collection.
+     * @allow (get) User with UID 'userId' can read a transaction in their own transaction collection.
+     * @allow (update) User with UID 'userId' can update a transaction in their own transaction collection.
+     * @allow (delete) User with UID 'userId' can delete a transaction in their own transaction collection.
+     * @allow (list) User with UID 'userId' can list transactions in their own transaction collection.
+     * @deny (create) User with UID 'anotherUserId' cannot create a transaction in user 'userId's transaction collection.
+     * @deny (get) User with UID 'anotherUserId' cannot read a transaction in user 'userId's transaction collection.
+     * @deny (update) User with UID 'anotherUserId' cannot update a transaction in user 'userId's transaction collection.
+     * @deny (delete) User with UID 'anotherUserId' cannot delete a transaction in user 'userId's transaction collection.
+     * @principle Enforces document ownership for transactions.
      */
     match /users/{userId}/transactions/{transactionId} {
       allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isExistingOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
       allow delete: if isExistingOwner(userId);
+    }
+
+    // ---- Helper functions ----
+
+    /**
+     * @description Checks if the current user is signed in.
+     * @return {boolean} True if the user is signed in, false otherwise.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * @description Checks if the current user is the owner of the resource.
+     * @param {string} userId The user ID to compare against the request's auth UID.
+     * @return {boolean} True if the user is the owner, false otherwise.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * @description Checks if the current user is the owner of the resource, and that the document exists.
+     * @param {string} userId The user ID to compare against the resource's `userId` field.
+     * @return {boolean} True if the user is the owner and the document exists, false otherwise.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
     }
   }
 }
