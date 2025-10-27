@@ -1,45 +1,80 @@
 /**
  * @file Firestore Security Rules
- * @description This ruleset allows any signed-in user full access to all data. This is for prototyping only and is NOT suitable for production.
- * @dataStructure
- *   - /artifacts/{appId}/users/{userId}: Stores user information.
+ * @core_philosophy This ruleset enforces a strict user-ownership model for financial transactions.
+ *   Each user has a dedicated data tree under /artifacts/{appId}/users/{userId}/..., and only the
+ *   authenticated user matching the {userId} can read and write their own data.
+ * @data_structure
+ *   - /artifacts/{appId}/users/{userId}: Stores user profile information.
  *   - /artifacts/{appId}/users/{userId}/transactions/{transactionId}: Stores financial transactions for a specific user.
- * @keySecurityDecisions All authenticated users have full access to all data.
+ * @key_security_decisions
+ *   - User listing is implicitly denied as there are no rules allowing it.
+ *   - Only authenticated users can access their own data; anonymous access is not permitted beyond potential public read collections (if defined).
+ *   - The rules are designed to be authorization independent; no data from parent documents needs to be fetched for child document authorization.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Allows any authenticated user to read, create, update, and delete user data.
+     * @description Enforces access control for user documents.
      * @path /artifacts/{appId}/users/{userId}
-     * @allow (create) - Any signed-in user can create a user document.
-     * @allow (get) - Any signed-in user can read any user document.
-     * @allow (update) - Any signed-in user can update any user document.
-     * @allow (delete) - Any signed-in user can delete any user document.
-     * @deny (none) - No requests are denied.
-     * @principle Allows all authenticated users full access.
+     * @allow (create) Authenticated user can create their own user document if the userId matches their auth UID.
+     * @allow (get, list) Authenticated user can read their own user document if the userId matches their auth UID.
+     * @allow (update, delete) Authenticated user can update/delete their own user document if the userId matches their auth UID.
+     * @deny (create) Authenticated user cannot create a user document for another user.
+     * @deny (get, list) Authenticated user cannot read another user's document.
+     * @deny (update, delete) Authenticated user cannot update/delete another user's document.
+     * @principle Enforces document ownership for all operations.
      */
     match /artifacts/{appId}/users/{userId} {
-      allow get, list, create, update, delete: if isSignedIn();
+      function isSignedIn() {
+        return request.auth != null;
+      }
+
+      function isOwner(userId) {
+        return isSignedIn() && request.auth.uid == userId;
+      }
+
+      function isExistingOwner(userId) {
+        return isOwner(userId) && resource != null;
+      }
+
+      allow get: if isOwner(userId);
+      allow list: if false; // Listing of users is not permitted.
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
     }
 
     /**
-     * @description Allows any authenticated user to read, create, update, and delete transaction data.
+     * @description Enforces access control for transaction documents.
      * @path /artifacts/{appId}/users/{userId}/transactions/{transactionId}
-     * @allow (create) - Any signed-in user can create a transaction document.
-     * @allow (get) - Any signed-in user can read any transaction document.
-     * @allow (update) - Any signed-in user can update any transaction document.
-     * @allow (delete) - Any signed-in user can delete any transaction document.
-     * @deny (none) - No requests are denied.
-     * @principle Allows all authenticated users full access.
+     * @allow (create) Authenticated user can create a transaction under their user document if the userId matches their auth UID.
+     * @allow (get, list) Authenticated user can read transactions under their user document if the userId matches their auth UID.
+     * @allow (update, delete) Authenticated user can update/delete a transaction under their user document if the userId matches their auth UID.
+     * @deny (create) Authenticated user cannot create a transaction under another user's document.
+     * @deny (get, list) Authenticated user cannot read transactions under another user's document.
+     * @deny (update, delete) Authenticated user cannot update/delete a transaction under another user's document.
+     * @principle Enforces document ownership for all operations.
      */
     match /artifacts/{appId}/users/{userId}/transactions/{transactionId} {
-      allow get, list, create, update, delete: if isSignedIn();
-    }
+      function isSignedIn() {
+        return request.auth != null;
+      }
 
-    function isSignedIn() {
-      return request.auth != null;
+      function isOwner(userId) {
+        return isSignedIn() && request.auth.uid == userId;
+      }
+
+       function isExistingOwner(userId) {
+        return isOwner(userId) && resource != null;
+      }
+
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+      allow delete: if isExistingOwner(userId);
     }
   }
 }
