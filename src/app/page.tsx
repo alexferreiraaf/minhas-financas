@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
 import { collection, query, orderBy, serverTimestamp, where } from 'firebase/firestore';
@@ -28,6 +28,7 @@ export default function FinancyCanvas() {
 
   const [showModal, setShowModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showExpenseDetails, setShowExpenseDetails] = useState(false);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
@@ -42,14 +43,15 @@ export default function FinancyCanvas() {
     }
   }, [isUserLoading, user, auth]);
 
-  const { balance, totalReceitas, totalDespesas } = useMemo(() => {
+  const { balance, totalReceitas, totalDespesas, despesas } = useMemo(() => {
     if (!transactions) {
-      return { balance: 0, totalReceitas: 0, totalDespesas: 0 };
+      return { balance: 0, totalReceitas: 0, totalDespesas: 0, despesas: [] };
     }
     const receitas = transactions.filter(t => t.tipo === 'receita').reduce((acc, t) => acc + t.valor, 0);
-    const despesas = transactions.filter(t => t.tipo === 'despesa').reduce((acc, t) => acc + t.valor, 0);
-    const currentBalance = receitas - despesas;
-    return { balance: currentBalance, totalReceitas: receitas, totalDespesas: despesas };
+    const despesasTransations = transactions.filter(t => t.tipo === 'despesa');
+    const despesasTotal = despesasTransations.reduce((acc, t) => acc + t.valor, 0);
+    const currentBalance = receitas - despesasTotal;
+    return { balance: currentBalance, totalReceitas: receitas, totalDespesas: despesasTotal, despesas: despesasTransations };
   }, [transactions]);
 
   const formatCurrency = useCallback((amount: number) => {
@@ -112,6 +114,15 @@ export default function FinancyCanvas() {
   }
 
   const isLoading = isUserLoading || isLoadingTransactions;
+  
+  const handleCloseReportModal = () => {
+    setShowReportModal(false);
+    // Use a timeout to reset the detail view after the modal closes
+    setTimeout(() => {
+        setShowExpenseDetails(false);
+    }, 300);
+  };
+
 
   if (isLoading) {
     return (
@@ -268,31 +279,75 @@ export default function FinancyCanvas() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showReportModal} onOpenChange={setShowReportModal}>
+      <Dialog open={showReportModal} onOpenChange={handleCloseReportModal}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-blue-500">Relatório Financeiro</DialogTitle>
-            <DialogDescription>
-              Resumo das suas movimentações financeiras.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
-              <span className="font-medium text-emerald-700">Total de Receitas</span>
-              <span className="font-bold text-lg text-emerald-600">{formatCurrency(totalReceitas)}</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
-              <span className="font-medium text-red-700">Total de Despesas</span>
-              <span className="font-bold text-lg text-red-600">{formatCurrency(totalDespesas)}</span>
-            </div>
-            <div className="flex justify-between items-center p-4 bg-card border-t-2 mt-4 rounded-lg">
-              <span className="font-bold text-foreground">Saldo Final</span>
-              <span className={`font-extrabold text-xl ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</span>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setShowReportModal(false)} variant="outline">Fechar</Button>
-          </DialogFooter>
+            <DialogHeader>
+                {showExpenseDetails ? (
+                    <div className="flex items-center">
+                        <Button variant="ghost" size="icon" className="mr-2" onClick={() => setShowExpenseDetails(false)}>
+                            <ArrowLeft className="h-4 w-4" />
+                        </Button>
+                        <DialogTitle className="text-2xl font-bold text-red-500">Relatório de Despesas</DialogTitle>
+                    </div>
+                ) : (
+                    <>
+                        <DialogTitle className="text-2xl font-bold text-blue-500">Relatório Financeiro</DialogTitle>
+                        <DialogDescription>
+                            Resumo das suas movimentações financeiras.
+                        </DialogDescription>
+                    </>
+                )}
+            </DialogHeader>
+
+            {showExpenseDetails ? (
+                <div className="max-h-[60vh] overflow-y-auto py-4 pr-2">
+                    <ul className="space-y-3">
+                        {despesas.map(d => (
+                            <li key={d.id} className="flex justify-between items-start p-3 bg-red-50/50 rounded-lg">
+                                <div>
+                                    <p className="font-medium text-red-800">{d.descricao}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        {d.data?.toDate().toLocaleString('pt-BR', {
+                                            day: '2-digit',
+                                            month: '2-digit',
+                                            year: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                        })}
+                                    </p>
+                                </div>
+                                <p className="font-semibold text-red-600 whitespace-nowrap ml-4">{formatCurrency(d.valor)}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ) : (
+                <div className="space-y-4 py-4">
+                    <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
+                        <span className="font-medium text-emerald-700">Total de Receitas</span>
+                        <span className="font-bold text-lg text-emerald-600">{formatCurrency(totalReceitas)}</span>
+                    </div>
+                    <div 
+                        className="flex justify-between items-center p-3 bg-red-50 rounded-lg cursor-pointer hover:bg-red-100 transition-colors"
+                        onClick={() => setShowExpenseDetails(true)}
+                    >
+                        <span className="font-medium text-red-700">Total de Despesas</span>
+                        <span className="font-bold text-lg text-red-600">{formatCurrency(totalDespesas)}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-4 bg-card border-t-2 mt-4 rounded-lg">
+                        <span className="font-bold text-foreground">Saldo Final</span>
+                        <span className={`font-extrabold text-xl ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</span>
+                    </div>
+                </div>
+            )}
+            
+            <DialogFooter>
+                {showExpenseDetails ? (
+                    <Button onClick={() => setShowExpenseDetails(false)} variant="outline">Voltar</Button>
+                ) : (
+                    <Button onClick={handleCloseReportModal} variant="outline">Fechar</Button>
+                )}
+            </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
