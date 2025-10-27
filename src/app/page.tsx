@@ -21,11 +21,11 @@ export default function FinancyCanvas() {
       if (!firestore || !user) return null;
       // Query the root 'transactions' collection
       const coll = collection(firestore, 'transactions');
-      // Filter transactions by the current user's ID
-      return query(coll, where('userId', '==', user.uid), orderBy('data', 'desc'));
+      // Filter transactions by the current user's ID, without ordering to avoid composite index requirement
+      return query(coll, where('userId', '==', user.uid));
   }, [firestore, user]);
 
-  const { data: transactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
+  const { data: rawTransactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
 
   const [balance, setBalance] = useState(0);
   const [error, setError] = useState('');
@@ -35,6 +35,17 @@ export default function FinancyCanvas() {
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sort transactions on the client-side
+  const transactions = useMemo(() => {
+    if (!rawTransactions) return [];
+    return [...rawTransactions].sort((a, b) => {
+      const dateA = a.data?.toDate() || new Date(0);
+      const dateB = b.data?.toDate() || new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+  }, [rawTransactions]);
+
 
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
