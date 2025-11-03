@@ -6,7 +6,7 @@ import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart,
 import type { Transaction } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
 import { collection, query, serverTimestamp, doc } from 'firebase/firestore';
-import { isToday, isThisMonth, isThisYear } from 'date-fns';
+import { isToday, isThisMonth, isThisYear, isThisWeek } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,7 +42,7 @@ export default function FinancyCanvas() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // State for report filtering
-  const [reportPeriod, setReportPeriod] = useState<'day' | 'month' | 'year' | 'all'>('all');
+  const [reportPeriod, setReportPeriod] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('all');
   const [reportSearchTerm, setReportSearchTerm] = useState('');
 
 
@@ -89,6 +89,8 @@ export default function FinancyCanvas() {
         switch (reportPeriod) {
           case 'day':
             return isToday(transactionDate);
+          case 'week':
+            return isThisWeek(transactionDate, { weekStartsOn: 1 }); // Monday as start of the week
           case 'month':
             return isThisMonth(transactionDate);
           case 'year':
@@ -390,9 +392,10 @@ export default function FinancyCanvas() {
                              {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
                         </div>
                         <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
-                            <TabsList className="grid w-full grid-cols-4">
+                            <TabsList className="grid w-full grid-cols-5">
                                 <TabsTrigger value="all">Total</TabsTrigger>
                                 <TabsTrigger value="day">Dia</TabsTrigger>
+                                <TabsTrigger value="week">Semana</TabsTrigger>
                                 <TabsTrigger value="month">Mês</TabsTrigger>
                                 <TabsTrigger value="year">Ano</TabsTrigger>
                             </TabsList>
@@ -478,6 +481,8 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
 
     
 
