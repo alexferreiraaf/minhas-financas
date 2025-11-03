@@ -6,7 +6,7 @@ import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart,
 import type { Transaction } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
 import { collection, query, serverTimestamp, doc } from 'firebase/firestore';
-import { isThisWeek, isThisMonth, isThisYear, parseISO } from 'date-fns';
+import { isToday, isThisMonth, isThisYear } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,7 +42,7 @@ export default function FinancyCanvas() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // State for report filtering
-  const [reportPeriod, setReportPeriod] = useState<'week' | 'month' | 'year' | 'all'>('all');
+  const [reportPeriod, setReportPeriod] = useState<'day' | 'month' | 'year' | 'all'>('all');
   const [reportSearchTerm, setReportSearchTerm] = useState('');
 
 
@@ -87,8 +87,8 @@ export default function FinancyCanvas() {
         if (!transactionDate) return false;
         
         switch (reportPeriod) {
-          case 'week':
-            return isThisWeek(transactionDate, { weekStartsOn: 1 });
+          case 'day':
+            return isToday(transactionDate);
           case 'month':
             return isThisMonth(transactionDate);
           case 'year':
@@ -392,7 +392,7 @@ export default function FinancyCanvas() {
                         <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
                             <TabsList className="grid w-full grid-cols-4">
                                 <TabsTrigger value="all">Total</TabsTrigger>
-                                <TabsTrigger value="week">Semana</TabsTrigger>
+                                <TabsTrigger value="day">Dia</TabsTrigger>
                                 <TabsTrigger value="month">Mês</TabsTrigger>
                                 <TabsTrigger value="year">Ano</TabsTrigger>
                             </TabsList>
@@ -478,5 +478,7 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
 
     
