@@ -2,15 +2,16 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
 import { collection, query, doc } from 'firebase/firestore';
-import { isToday, isThisMonth, isThisYear, isThisWeek, format } from 'date-fns';
+import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
@@ -21,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
+import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 
 
 export default function FinancyCanvas() {
@@ -61,6 +63,8 @@ export default function FinancyCanvas() {
     });
   }, [rawTransactions]);
 
+  const recentTransactions = useMemo(() => transactions.slice(0, 5), [transactions]);
+
 
   useEffect(() => {
     if (!isUserLoading && !user && auth) {
@@ -84,6 +88,38 @@ export default function FinancyCanvas() {
       despesas: despesasTransations,
       receitas: receitasTransactions
     };
+  }, [transactions]);
+
+  const chartData = useMemo(() => {
+    if (!transactions) return [];
+
+    const monthlyData: { [key: string]: { month: string; receita: number; despesa: number } } = {};
+
+    transactions.forEach(t => {
+        const transactionDate = t.data?.toDate();
+        if (!transactionDate) return;
+
+        const monthKey = format(transactionDate, 'yyyy-MM');
+        if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = {
+                month: format(transactionDate, 'MMM/yy', { locale: ptBR }),
+                receita: 0,
+                despesa: 0,
+            };
+        }
+
+        if (t.tipo === 'receita') {
+            monthlyData[monthKey].receita += t.valor;
+        } else {
+            monthlyData[monthKey].despesa += t.valor;
+        }
+    });
+
+    return Object.values(monthlyData).sort((a, b) => {
+        const dateA = parse(a.month, 'MMM/yy', new Date());
+        const dateB = parse(b.month, 'MMM/yy', new Date());
+        return dateA.getTime() - dateB.getTime();
+    });
   }, [transactions]);
 
   const filterTransactionsByPeriod = useCallback((items: Transaction[], period: typeof reportPeriod, searchTerm: string) => {
@@ -133,6 +169,12 @@ export default function FinancyCanvas() {
       style: 'currency',
       currency: 'BRL',
     }).format(amount);
+  }, []);
+
+  const formatCurrencySimple = useCallback((amount: number) => {
+    if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
+    if (amount >= 1000) return `${(amount / 1000).toFixed(0)}k`;
+    return amount.toString();
   }, []);
   
   const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -228,7 +270,7 @@ export default function FinancyCanvas() {
     if (reportView === 'summary') {
         return (
             <>
-                <DialogTitle className="text-2xl font-bold text-blue-500">Relatório Financeiro</DialogTitle>
+                <DialogTitle className="text-2xl font-bold text-primary">Relatório Financeiro</DialogTitle>
                 <DialogDescription>Resumo das suas movimentações financeiras.</DialogDescription>
             </>
         );
@@ -283,7 +325,7 @@ export default function FinancyCanvas() {
                         {items.map(d => (
                             <li key={d.id} className={`flex justify-between items-start p-3 bg-card border-l-4 border-${baseColor}-400 rounded-lg`}>
                                 <div>
-                                    <p className={`font-medium text-${baseColor}-800 dark:text-${baseColor}-300`}>{d.descricao}</p>
+                                    <p className={`font-medium text-sm text-${baseColor}-800 dark:text-${baseColor}-300`}>{d.descricao}</p>
                                     <p className="text-xs text-muted-foreground mt-1">
                                         {d.data?.toDate().toLocaleString('pt-BR', {
                                             day: '2-digit', month: '2-digit', year: 'numeric',
@@ -304,6 +346,17 @@ export default function FinancyCanvas() {
             </div>
         </div>
     );
+  };
+  
+  const chartConfig = {
+    receita: {
+      label: "Receita",
+      color: "hsl(var(--chart-2))",
+    },
+    despesa: {
+      label: "Despesa",
+      color: "hsl(var(--chart-1))",
+    },
   };
 
   return (
@@ -361,52 +414,87 @@ export default function FinancyCanvas() {
         </div>
 
         <Card className="shadow-xl">
-          <CardHeader>
-            <CardTitle>Histórico de Transações</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                  <CardTitle>Visão Geral Mensal</CardTitle>
+                  <CardDescription>Receitas e despesas ao longo dos meses.</CardDescription>
+              </div>
+               <Button variant="ghost" size="sm" onClick={() => { setReportView('summary'); setShowReportModal(true); }}>
+                  <MoreHorizontal className="h-4 w-4" />
+                  <span className="sr-only">Ver relatório completo</span>
+              </Button>
           </CardHeader>
-          <CardContent>
-            {transactions && transactions.length === 0 ? (
+          <CardContent className="space-y-6">
+            {transactions.length === 0 ? (
               <div className="py-10 text-center text-muted-foreground">
-                <CreditCard className="w-10 h-10 mx-auto mb-3" />
-                <p>Nenhuma transação registrada.</p>
-                <p className='text-sm mt-1'>Comece adicionando uma receita ou despesa.</p>
+                <PieChart className="w-10 h-10 mx-auto mb-3" />
+                <p>Nenhum dado para exibir no gráfico.</p>
+                <p className='text-sm mt-1'>Adicione transações para começar a visualizar.</p>
               </div>
             ) : (
-              <ul className="space-y-3">
-                {transactions && transactions.map((t) => (
-                  <li
-                    key={t.id}
-                    className={`group flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 
-                      ${t.tipo === 'receita' ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 dark:border-emerald-700' : 'border-red-400 bg-red-50/50 hover:bg-red-50 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:border-red-700'}`}
-                  >
-                    <div className="flex items-center">
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mr-3 ${t.tipo === 'receita' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-800/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-800/30 dark:text-red-400'}`}>
-                         {t.tipo === 'receita' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground leading-tight">{t.descricao}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {t.data && t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center flex-shrink-0 ml-4">
-                      <p className={`font-semibold ${t.tipo === 'receita' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
-                      </p>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => setTransactionToDelete(t.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={chartData} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
+                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false}/>
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrencySimple(value as number)} />
+                    <Tooltip 
+                      cursor={{ fill: 'hsl(var(--accent))', radius: 'var(--radius)' }}
+                      content={<ChartTooltipContent formatter={(value, name) => <div><p className="font-medium">{name === 'receita' ? 'Receitas' : 'Despesas'}</p><p>{formatCurrency(value as number)}</p></div>} />}
+                    />
+                    <Legend />
+                    <Bar dataKey="receita" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} name="Receitas"/>
+                    <Bar dataKey="despesa" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} name="Despesas"/>
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
             )}
+
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-lg font-semibold">Transações Recentes</h3>
+                   <Button variant="link" size="sm" className="text-primary" onClick={() => { setReportView('summary'); setShowReportModal(true); }}>Ver Todas</Button>
+              </div>
+              {recentTransactions.length > 0 ? (
+                  <ul className="space-y-3">
+                    {recentTransactions.map((t) => (
+                      <li
+                        key={t.id}
+                        className={`group flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 
+                          ${t.tipo === 'receita' ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 dark:border-emerald-700' : 'border-red-400 bg-red-50/50 hover:bg-red-50 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:border-red-700'}`}
+                      >
+                        <div className="flex items-center">
+                          <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mr-3 ${t.tipo === 'receita' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-800/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-800/30 dark:text-red-400'}`}>
+                             {t.tipo === 'receita' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground leading-tight text-sm">{t.descricao}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {t.data && t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center flex-shrink-0 ml-4">
+                          <p className={`font-semibold text-sm ${t.tipo === 'receita' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => setTransactionToDelete(t.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+              ) : (
+                <div className="py-6 text-center text-muted-foreground">
+                  <p>Nenhuma transação registrada ainda.</p>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -546,4 +634,6 @@ export default function FinancyCanvas() {
 }
 
     
+    
+
     
