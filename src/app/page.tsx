@@ -38,7 +38,7 @@ export default function FinancyCanvas() {
 
   const [showModal, setShowModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [showExpenseDetails, setShowExpenseDetails] = useState(false);
+  const [reportView, setReportView] = useState<'summary' | 'despesas' | 'receitas'>('summary');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
@@ -68,50 +68,64 @@ export default function FinancyCanvas() {
     }
   }, [isUserLoading, user, auth]);
 
-  const { balance, totalReceitas, totalDespesas, despesas } = useMemo(() => {
+  const { balance, totalReceitas, totalDespesas, despesas, receitas } = useMemo(() => {
     if (!transactions) {
-      return { balance: 0, totalReceitas: 0, totalDespesas: 0, despesas: [] };
+      return { balance: 0, totalReceitas: 0, totalDespesas: 0, despesas: [], receitas: [] };
     }
-    const receitas = transactions.filter(t => t.tipo === 'receita').reduce((acc, t) => acc + t.valor, 0);
+    const receitasTransactions = transactions.filter(t => t.tipo === 'receita');
+    const receitasTotal = receitasTransactions.reduce((acc, t) => acc + t.valor, 0);
     const despesasTransations = transactions.filter(t => t.tipo === 'despesa');
     const despesasTotal = despesasTransations.reduce((acc, t) => acc + t.valor, 0);
-    const currentBalance = receitas - despesasTotal;
-    return { balance: currentBalance, totalReceitas: receitas, totalDespesas: despesasTotal, despesas: despesasTransations };
+    const currentBalance = receitasTotal - despesasTotal;
+    return { 
+      balance: currentBalance, 
+      totalReceitas: receitasTotal, 
+      totalDespesas: despesasTotal, 
+      despesas: despesasTransations,
+      receitas: receitasTransactions
+    };
   }, [transactions]);
 
-  const filteredDespesas = useMemo(() => {
-    let filtered = despesas;
+  const filterTransactionsByPeriod = useCallback((items: Transaction[], period: typeof reportPeriod, searchTerm: string) => {
+    let filtered = items;
 
-    if (reportSearchTerm) {
-      filtered = filtered.filter(d => d.descricao.toLowerCase().includes(reportSearchTerm.toLowerCase()));
+    if (searchTerm) {
+        filtered = filtered.filter(d => d.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
     }
 
-    if (reportPeriod !== 'all') {
-      filtered = filtered.filter(d => {
-        const transactionDate = d.data?.toDate();
-        if (!transactionDate) return false;
-        
-        switch (reportPeriod) {
-          case 'day':
-            return isToday(transactionDate);
-          case 'week':
-            return isThisWeek(transactionDate, { weekStartsOn: 1 }); // Monday as start of the week
-          case 'month':
-            return isThisMonth(transactionDate);
-          case 'year':
-            return isThisYear(transactionDate);
-          default:
-            return true;
-        }
-      });
+    if (period !== 'all') {
+        filtered = filtered.filter(d => {
+            const transactionDate = d.data?.toDate();
+            if (!transactionDate) return false;
+            
+            switch (period) {
+                case 'day': return isToday(transactionDate);
+                case 'week': return isThisWeek(transactionDate, { weekStartsOn: 1 });
+                case 'month': return isThisMonth(transactionDate);
+                case 'year': return isThisYear(transactionDate);
+                default: return true;
+            }
+        });
     }
 
     return filtered;
-  }, [despesas, reportPeriod, reportSearchTerm]);
+  }, []);
+
+  const filteredDespesas = useMemo(() => {
+    return filterTransactionsByPeriod(despesas, reportPeriod, reportSearchTerm);
+  }, [despesas, reportPeriod, reportSearchTerm, filterTransactionsByPeriod]);
 
   const filteredTotalDespesas = useMemo(() => {
     return filteredDespesas.reduce((acc, d) => acc + d.valor, 0);
   }, [filteredDespesas]);
+
+  const filteredReceitas = useMemo(() => {
+    return filterTransactionsByPeriod(receitas, reportPeriod, reportSearchTerm);
+  }, [receitas, reportPeriod, reportSearchTerm, filterTransactionsByPeriod]);
+
+  const filteredTotalReceitas = useMemo(() => {
+    return filteredReceitas.reduce((acc, d) => acc + d.valor, 0);
+  }, [filteredReceitas]);
 
 
   const formatCurrency = useCallback((amount: number) => {
@@ -189,12 +203,11 @@ export default function FinancyCanvas() {
     setShowReportModal(false);
     // Use a timeout to reset views after the modal closes
     setTimeout(() => {
-        setShowExpenseDetails(false);
+        setReportView('summary');
         setReportPeriod('all');
         setReportSearchTerm('');
     }, 300);
   };
-
 
   if (isLoading) {
     return (
@@ -210,6 +223,88 @@ export default function FinancyCanvas() {
   const modalColor = formType === 'receita' ? 'text-emerald-500' : 'text-red-500';
 
   const pageError = transactionsError || error;
+
+  const renderReportHeader = () => {
+    if (reportView === 'summary') {
+        return (
+            <>
+                <DialogTitle className="text-2xl font-bold text-blue-500">Relatório Financeiro</DialogTitle>
+                <DialogDescription>Resumo das suas movimentações financeiras.</DialogDescription>
+            </>
+        );
+    }
+    const title = reportView === 'despesas' ? "Relatório de Despesas" : "Relatório de Receitas";
+    const color = reportView === 'despesas' ? "text-red-500" : "text-emerald-500";
+    return (
+        <div className="flex items-center">
+            <Button variant="ghost" size="icon" className="mr-2" onClick={() => setReportView('summary')}>
+                <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <DialogTitle className={`text-2xl font-bold ${color}`}>{title}</DialogTitle>
+        </div>
+    );
+  };
+
+  const renderDetailedReport = (type: 'receitas' | 'despesas') => {
+      const items = type === 'receitas' ? filteredReceitas : filteredDespesas;
+      const total = type === 'receitas' ? filteredTotalReceitas : filteredTotalDespesas;
+      const baseColor = type === 'receitas' ? 'emerald' : 'red';
+
+      return (
+        <div className="py-4 pr-2">
+            <div className="flex flex-col space-y-4">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                        placeholder="Filtrar por descrição..."
+                        value={reportSearchTerm}
+                        onChange={(e) => setReportSearchTerm(e.target.value)}
+                        className="pl-10"
+                    />
+                      {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
+                </div>
+                <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
+                    <TabsList className="grid w-full grid-cols-5">
+                        <TabsTrigger value="all">Total</TabsTrigger>
+                        <TabsTrigger value="day">Dia</TabsTrigger>
+                        <TabsTrigger value="week">Semana</TabsTrigger>
+                        <TabsTrigger value="month">Mês</TabsTrigger>
+                        <TabsTrigger value="year">Ano</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+                <div className={`flex justify-between items-center p-3 bg-${baseColor}-50 dark:bg-${baseColor}-900/30 rounded-lg`}>
+                    <span className={`font-medium text-${baseColor}-700 dark:text-${baseColor}-300`}>Total Filtrado</span>
+                    <span className={`font-bold text-lg text-${baseColor}-600 dark:text-${baseColor}-400`}>{formatCurrency(total)}</span>
+                </div>
+
+                <div className="max-h-[40vh] overflow-y-auto pr-2">
+                  {items.length > 0 ? (
+                    <ul className="space-y-3">
+                        {items.map(d => (
+                            <li key={d.id} className={`flex justify-between items-start p-3 bg-card border-l-4 border-${baseColor}-400 rounded-lg`}>
+                                <div>
+                                    <p className={`font-medium text-${baseColor}-800 dark:text-${baseColor}-300`}>{d.descricao}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        {d.data?.toDate().toLocaleString('pt-BR', {
+                                            day: '2-digit', month: '2-digit', year: 'numeric',
+                                            hour: '2-digit', minute: '2-digit'
+                                        })}
+                                    </p>
+                                </div>
+                                <p className={`font-semibold text-${baseColor}-600 dark:text-${baseColor}-400 whitespace-nowrap ml-4`}>{formatCurrency(d.valor)}</p>
+                            </li>
+                        ))}
+                    </ul>
+                  ) : (
+                    <div className="text-center py-10 text-muted-foreground">
+                      <p>Nenhuma {type === 'receitas' ? 'receita' : 'despesa'} encontrada para os filtros selecionados.</p>
+                    </div>
+                  )}
+                </div>
+            </div>
+        </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 md:p-8 font-body">
@@ -393,88 +488,21 @@ export default function FinancyCanvas() {
       <Dialog open={showReportModal} onOpenChange={handleCloseReportModal}>
         <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-                {showExpenseDetails ? (
-                    <div className="flex items-center">
-                        <Button variant="ghost" size="icon" className="mr-2" onClick={() => setShowExpenseDetails(false)}>
-                            <ArrowLeft className="h-4 w-4" />
-                        </Button>
-                        <DialogTitle className="text-2xl font-bold text-red-500">Relatório de Despesas</DialogTitle>
-                    </div>
-                ) : (
-                    <>
-                        <DialogTitle className="text-2xl font-bold text-blue-500">Relatório Financeiro</DialogTitle>
-                        <DialogDescription>
-                            Resumo das suas movimentações financeiras.
-                        </DialogDescription>
-                    </>
-                )}
+                {renderReportHeader()}
             </DialogHeader>
 
-            {showExpenseDetails ? (
-                <div className="py-4 pr-2">
-                    <div className="flex flex-col space-y-4">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <Input 
-                                placeholder="Filtrar por descrição..."
-                                value={reportSearchTerm}
-                                onChange={(e) => setReportSearchTerm(e.target.value)}
-                                className="pl-10"
-                            />
-                             {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
-                        </div>
-                        <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
-                            <TabsList className="grid w-full grid-cols-5">
-                                <TabsTrigger value="all">Total</TabsTrigger>
-                                <TabsTrigger value="day">Dia</TabsTrigger>
-                                <TabsTrigger value="week">Semana</TabsTrigger>
-                                <TabsTrigger value="month">Mês</TabsTrigger>
-                                <TabsTrigger value="year">Ano</TabsTrigger>
-                            </TabsList>
-                        </Tabs>
-                        <div className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/30 rounded-lg">
-                           <span className="font-medium text-red-700 dark:text-red-300">Total Filtrado</span>
-                           <span className="font-bold text-lg text-red-600 dark:text-red-400">{formatCurrency(filteredTotalDespesas)}</span>
-                       </div>
-
-                        <div className="max-h-[40vh] overflow-y-auto pr-2">
-                          {filteredDespesas.length > 0 ? (
-                            <ul className="space-y-3">
-                                {filteredDespesas.map(d => (
-                                    <li key={d.id} className="flex justify-between items-start p-3 bg-card border-l-4 border-red-400 rounded-lg">
-                                        <div>
-                                            <p className="font-medium text-red-800 dark:text-red-300">{d.descricao}</p>
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                                {d.data?.toDate().toLocaleString('pt-BR', {
-                                                    day: '2-digit',
-                                                    month: '2-digit',
-                                                    year: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                })}
-                                            </p>
-                                        </div>
-                                        <p className="font-semibold text-red-600 dark:text-red-400 whitespace-nowrap ml-4">{formatCurrency(d.valor)}</p>
-                                    </li>
-                                ))}
-                            </ul>
-                          ) : (
-                            <div className="text-center py-10 text-muted-foreground">
-                              <p>Nenhuma despesa encontrada para os filtros selecionados.</p>
-                            </div>
-                          )}
-                        </div>
-                    </div>
-                </div>
-            ) : (
+            {reportView === 'summary' && (
                 <div className="space-y-4 py-4">
-                    <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg">
+                    <div 
+                        className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                        onClick={() => setReportView('receitas')}
+                    >
                         <span className="font-medium text-emerald-700 dark:text-emerald-300">Total de Receitas</span>
                         <span className="font-bold text-lg text-emerald-600 dark:text-emerald-400">{formatCurrency(totalReceitas)}</span>
                     </div>
                     <div 
                         className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/30 rounded-lg cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
-                        onClick={() => setShowExpenseDetails(true)}
+                        onClick={() => setReportView('despesas')}
                     >
                         <span className="font-medium text-red-700 dark:text-red-300">Total de Despesas</span>
                         <span className="font-bold text-lg text-red-600 dark:text-red-400">{formatCurrency(totalDespesas)}</span>
@@ -486,9 +514,12 @@ export default function FinancyCanvas() {
                 </div>
             )}
             
+            {reportView === 'despesas' && renderDetailedReport('despesas')}
+            {reportView === 'receitas' && renderDetailedReport('receitas')}
+            
             <DialogFooter>
-                {showExpenseDetails ? (
-                    <Button onClick={() => setShowExpenseDetails(false)} variant="outline">Voltar ao Resumo</Button>
+                {reportView !== 'summary' ? (
+                    <Button onClick={() => setReportView('summary')} variant="outline">Voltar ao Resumo</Button>
                 ) : (
                     <Button onClick={handleCloseReportModal} variant="outline">Fechar</Button>
                 )}
@@ -514,4 +545,5 @@ export default function FinancyCanvas() {
   );
 }
 
+    
     
