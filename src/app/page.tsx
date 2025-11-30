@@ -2,11 +2,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut } from 'lucide-react';
 import type { Transaction, Group } from '@/lib/types';
-import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
+import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser } from '@/firebase';
 import { collection, query, doc } from 'firebase/firestore';
-import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse, startOfMonth, endOfMonth } from 'date-fns';
+import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts';
@@ -30,6 +30,12 @@ export default function FinancyCanvas() {
   const { firestore, auth } = useFirebase();
   const { user, isUserLoading } = useUser();
   
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      window.location.href = '/login';
+    }
+  }, [isUserLoading, user]);
+
   const transactionsQuery = useMemoFirebase(() => {
       if (!firestore || !user) return null;
       return query(collection(firestore, 'users', user.uid, 'transactions'));
@@ -63,6 +69,10 @@ export default function FinancyCanvas() {
   const [reportPeriod, setReportPeriod] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('all');
   const [reportSearchTerm, setReportSearchTerm] = useState('');
 
+  const groupMap = useMemo(() => {
+    if (!groups) return new Map();
+    return new Map(groups.map(g => [g.id, g.name]));
+  }, [groups]);
 
   // Client-side sorting because orderBy is not in the query
   const transactions = useMemo(() => {
@@ -75,13 +85,6 @@ export default function FinancyCanvas() {
   }, [rawTransactions]);
 
   const recentTransactions = useMemo(() => transactions.slice(0, 5), [transactions]);
-
-
-  useEffect(() => {
-    if (!isUserLoading && !user && auth) {
-      initiateAnonymousSignIn(auth);
-    }
-  }, [isUserLoading, user, auth]);
 
   const { balance, totalReceitas, totalDespesas, despesas, receitas } = useMemo(() => {
     if (!transactions) {
@@ -173,9 +176,6 @@ export default function FinancyCanvas() {
   const filteredTotalReceitas = useMemo(() => {
     return filteredReceitas.reduce((acc, d) => acc + d.valor, 0);
   }, [filteredReceitas]);
-
-  const groupMap = useMemo(() => new Map(groups?.map(g => [g.id, g.name])), [groups]);
-
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -275,7 +275,7 @@ export default function FinancyCanvas() {
     setShowModal(true);
   }
 
-  const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups;
+  const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups || !user;
   
   const handleCloseReportModal = () => {
     setShowReportModal(false);
@@ -285,6 +285,12 @@ export default function FinancyCanvas() {
         setReportPeriod('all');
         setReportSearchTerm('');
     }, 300);
+  };
+  
+  const handleLogout = () => {
+    if (auth) {
+        signOutUser(auth);
+    }
   };
 
   if (isLoading) {
@@ -418,11 +424,14 @@ export default function FinancyCanvas() {
               Minhas Finanças
             </h1>
             <div className="flex items-center space-x-2">
-              <span className="text-xs text-muted-foreground flex items-center">
+              <span className="text-xs text-muted-foreground flex items-center" title={user?.email || user?.uid}>
                 <Users className="w-3 h-3 mr-1" />
-                {user ? user.uid.substring(0,6) : '...'}
+                {user?.email || user?.uid.substring(0,10)}
               </span>
               <ThemeToggleButton />
+              <Button variant="ghost" size="icon" onClick={handleLogout} title="Sair">
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
           </div>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Saldo Atual</h2>

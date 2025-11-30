@@ -75,7 +75,7 @@
     }
   },
   "auth": {
-    "providers": ["anonymous"]
+    "providers": ["email-password"]
   },
   "firestore": {
     "structure": [
