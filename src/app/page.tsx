@@ -2,11 +2,12 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon } from 'lucide-react';
 import type { Transaction } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
-import { collection, query, serverTimestamp, doc } from 'firebase/firestore';
-import { isToday, isThisMonth, isThisYear, isThisWeek } from 'date-fns';
+import { collection, query, doc } from 'firebase/firestore';
+import { isToday, isThisMonth, isThisYear, isThisWeek, format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +18,9 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ThemeToggleButton } from '@/components/theme-toggle';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
 
 
 export default function FinancyCanvas() {
@@ -39,6 +43,7 @@ export default function FinancyCanvas() {
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
+  const [date, setDate] = useState<Date | undefined>(new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // State for report filtering
@@ -138,8 +143,8 @@ export default function FinancyCanvas() {
     
     const numericValue = parseFloat(value.replace(/\./g, '').replace(',', '.'));
 
-    if (description.trim() === '' || isNaN(numericValue) || numericValue <= 0) {
-      setError("Por favor, preencha a descrição e um valor positivo.");
+    if (description.trim() === '' || isNaN(numericValue) || numericValue <= 0 || !date) {
+      setError("Por favor, preencha todos os campos com valores válidos.");
       setIsSubmitting(false);
       return;
     }
@@ -149,7 +154,7 @@ export default function FinancyCanvas() {
       descricao: description.trim(),
       valor: numericValue,
       tipo: formType,
-      data: serverTimestamp(),
+      data: date,
     };
 
     const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
@@ -158,6 +163,7 @@ export default function FinancyCanvas() {
 
     setDescription('');
     setValue('');
+    setDate(new Date());
     setShowModal(false);
     setError('');
     setIsSubmitting(false);
@@ -324,7 +330,7 @@ export default function FinancyCanvas() {
               </Alert>
             )}
             <div>
-              <Label htmlFor="description" className="text-left">Descrição</Label>
+              <Label htmlFor="description" className="text-left">Nome da entrada</Label>
               <Input
                 id="description"
                 value={description}
@@ -346,6 +352,32 @@ export default function FinancyCanvas() {
                 type="text"
                 inputMode="decimal"
               />
+            </div>
+            <div>
+                <Label htmlFor="date" className="text-left">Data</Label>
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant={"outline"}
+                            className={cn(
+                                "w-full justify-start text-left font-normal mt-1",
+                                !date && "text-muted-foreground"
+                            )}
+                        >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {date ? format(date, "PPP", { locale: ptBR }) : <span>Escolha uma data</span>}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                        <Calendar
+                            mode="single"
+                            selected={date}
+                            onSelect={setDate}
+                            initialFocus
+                            locale={ptBR}
+                        />
+                    </PopoverContent>
+                </Popover>
             </div>
             <DialogFooter className="pt-4">
               <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
@@ -481,9 +513,5 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
-
-    
 
     
