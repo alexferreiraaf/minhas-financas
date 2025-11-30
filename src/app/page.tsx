@@ -174,6 +174,8 @@ export default function FinancyCanvas() {
     return filteredReceitas.reduce((acc, d) => acc + d.valor, 0);
   }, [filteredReceitas]);
 
+  const groupMap = useMemo(() => new Map(groups?.map(g => [g.id, g.name])), [groups]);
+
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -325,7 +327,7 @@ export default function FinancyCanvas() {
       const items = type === 'receitas' ? filteredReceitas : filteredDespesas;
       const total = type === 'receitas' ? filteredTotalReceitas : filteredTotalDespesas;
       const baseColor = type === 'receitas' ? 'emerald' : 'red';
-      const groupMap = useMemo(() => new Map(groups?.map(g => [g.id, g.name])), [groups]);
+      
 
       return (
         <div className="py-4 pr-2">
@@ -399,8 +401,6 @@ export default function FinancyCanvas() {
     },
   };
 
-  const groupMap = useMemo(() => new Map(groups?.map(g => [g.id, g.name])), [groups]);
-
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 md:p-8 font-body">
       <div className="max-w-4xl mx-auto">
@@ -441,7 +441,7 @@ export default function FinancyCanvas() {
           </Button>
           <Button
             onClick={() => openModal('despesa')}
-            className="w-full p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
+            className="w-full p-6 bg-red-500 hover:bg-red-500 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"
           >
             <ArrowDown className="w-5 h-5 mr-2" />
             Saídas
@@ -740,3 +740,5 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
