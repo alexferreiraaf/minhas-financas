@@ -8,4 +8,11 @@ export interface Transaction {
   valor: number;
   tipo: 'receita' | 'despesa';
   data: Timestamp;
+  groupId?: string;
+}
+
+export interface Group {
+  id: string;
+  userId: string;
+  name: string;
 }

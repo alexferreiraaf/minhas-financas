@@ -31,6 +31,10 @@
           "type": "string",
           "format": "date-time",
           "description": "Data e hora da transação."
+        },
+        "groupId": {
+            "type": "string",
+            "description": "ID do grupo ao qual a despesa pertence (opcional)."
         }
       },
       "required": ["userId", "descricao", "valor", "tipo", "data"]
@@ -47,6 +51,27 @@
         }
       },
       "required": ["id"]
+    },
+    "Group": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Group",
+        "description": "Representa um grupo de despesas criado pelo usuário.",
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "description": "O ID único do grupo."
+            },
+            "userId": {
+                "type": "string",
+                "description": "ID do usuário que criou o grupo."
+            },
+            "name": {
+                "type": "string",
+                "description": "Nome do grupo (ex: 'Mercado', 'Transporte')."
+            }
+        },
+        "required": ["userId", "name"]
     }
   },
   "auth": {
@@ -68,6 +93,14 @@
           "entityName": "Transaction",
           "schema": { "$ref": "#/backend/entities/Transaction" },
           "description": "Armazena as transações financeiras de um usuário específico como uma subcoleção."
+        }
+      },
+      {
+        "path": "users/{userId}/groups/{groupId}",
+        "definition": {
+            "entityName": "Group",
+            "schema": { "$ref": "#/backend/entities/Group" },
+            "description": "Armazena os grupos de despesas de um usuário."
         }
       }
     ]

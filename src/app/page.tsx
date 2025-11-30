@@ -2,8 +2,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal } from 'lucide-react';
-import type { Transaction } from '@/lib/types';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings } from 'lucide-react';
+import type { Transaction, Group } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, initiateAnonymousSignIn } from '@/firebase';
 import { collection, query, doc } from 'firebase/firestore';
 import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse, startOfMonth, endOfMonth } from 'date-fns';
@@ -23,6 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 export default function FinancyCanvas() {
@@ -34,18 +35,28 @@ export default function FinancyCanvas() {
       return query(collection(firestore, 'users', user.uid, 'transactions'));
   }, [firestore, user]);
 
+  const groupsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(collection(firestore, 'users', user.uid, 'groups'));
+  }, [firestore, user]);
+
   const { data: rawTransactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
+  const { data: groups, isLoading: isLoadingGroups } = useCollection<Group>(groupsQuery);
+
 
   const [error, setError] = useState('');
 
   const [showModal, setShowModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showGroupsModal, setShowGroupsModal] = useState(false);
   const [reportView, setReportView] = useState<'summary' | 'despesas' | 'receitas'>('summary');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // State for report filtering
@@ -205,21 +216,25 @@ export default function FinancyCanvas() {
       return;
     }
 
-    const newTransaction = {
+    const newTransaction: Omit<Transaction, 'id' | 'data'> & { data: Date; groupId?: string | null } = {
       userId: user.uid,
       descricao: description.trim(),
       valor: numericValue,
       tipo: formType,
       data: date,
     };
+    
+    if (formType === 'despesa' && selectedGroupId) {
+        newTransaction.groupId = selectedGroupId;
+    }
 
     const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
     addDocumentNonBlocking(userTransactionsCollection, newTransaction);
 
-
     setDescription('');
     setValue('');
     setDate(new Date());
+    setSelectedGroupId(null);
     setShowModal(false);
     setError('');
     setIsSubmitting(false);
@@ -233,13 +248,32 @@ export default function FinancyCanvas() {
     setTransactionToDelete(null);
   };
 
+  const handleAddGroup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !firestore || newGroupName.trim() === '') return;
+
+    const newGroup = {
+        userId: user.uid,
+        name: newGroupName.trim(),
+    };
+    const userGroupsCollection = collection(firestore, 'users', user.uid, 'groups');
+    addDocumentNonBlocking(userGroupsCollection, newGroup);
+    setNewGroupName('');
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+      if (!user || !firestore) return;
+      const groupRef = doc(firestore, 'users', user.uid, 'groups', groupId);
+      deleteDocumentNonBlocking(groupRef);
+  };
+
 
   const openModal = (type: 'receita' | 'despesa') => {
     setFormType(type);
     setShowModal(true);
   }
 
-  const isLoading = isUserLoading || isLoadingTransactions;
+  const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups;
   
   const handleCloseReportModal = () => {
     setShowReportModal(false);
@@ -291,6 +325,7 @@ export default function FinancyCanvas() {
       const items = type === 'receitas' ? filteredReceitas : filteredDespesas;
       const total = type === 'receitas' ? filteredTotalReceitas : filteredTotalDespesas;
       const baseColor = type === 'receitas' ? 'emerald' : 'red';
+      const groupMap = useMemo(() => new Map(groups?.map(g => [g.id, g.name])), [groups]);
 
       return (
         <div className="py-4 pr-2">
@@ -325,7 +360,12 @@ export default function FinancyCanvas() {
                         {items.map(d => (
                             <li key={d.id} className={`flex justify-between items-start p-3 bg-card border-l-4 border-${baseColor}-400 rounded-lg`}>
                                 <div>
-                                    <p className={`font-medium text-sm text-${baseColor}-800 dark:text-${baseColor}-300`}>{d.descricao}</p>
+                                    <p className={`font-medium text-sm text-foreground`}>{d.descricao}</p>
+                                    {d.groupId && groupMap.get(d.groupId) && (
+                                        <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">
+                                            {groupMap.get(d.groupId)}
+                                        </span>
+                                    )}
                                     <p className="text-xs text-muted-foreground mt-1">
                                         {d.data?.toDate().toLocaleString('pt-BR', {
                                             day: '2-digit', month: '2-digit', year: 'numeric',
@@ -358,6 +398,8 @@ export default function FinancyCanvas() {
       color: "hsl(var(--chart-1))",
     },
   };
+
+  const groupMap = useMemo(() => new Map(groups?.map(g => [g.id, g.name])), [groups]);
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 md:p-8 font-body">
@@ -468,6 +510,11 @@ export default function FinancyCanvas() {
                           </div>
                           <div>
                             <p className="font-medium text-foreground leading-tight text-sm">{t.descricao}</p>
+                            {t.tipo === 'despesa' && t.groupId && groupMap.get(t.groupId) && (
+                                <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">
+                                    {groupMap.get(t.groupId)}
+                                </span>
+                            )}
                             <p className="text-xs text-muted-foreground mt-0.5">
                               {t.data && t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })}
                             </p>
@@ -499,7 +546,7 @@ export default function FinancyCanvas() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={(isOpen) => { setShowModal(isOpen); if (!isOpen) setError(''); }}>
+      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setSelectedGroupId(null); } setShowModal(isOpen); }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle className={`text-2xl font-bold ${modalColor}`}>{modalTitle}</DialogTitle>
@@ -523,6 +570,30 @@ export default function FinancyCanvas() {
                 className="mt-1"
               />
             </div>
+            {formType === 'despesa' && (
+              <div>
+                <Label htmlFor="group">Grupo</Label>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Select onValueChange={setSelectedGroupId} value={selectedGroupId || ''}>
+                      <SelectTrigger id="group">
+                          <SelectValue placeholder="Selecione um grupo (opcional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="none">Nenhum grupo</SelectItem>
+                          {groups?.map((group) => (
+                              <SelectItem key={group.id} value={group.id}>
+                                  {group.name}
+                              </SelectItem>
+                          ))}
+                      </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setShowGroupsModal(true)}>
+                      <Settings className="h-4 w-4" />
+                      <span className="sr-only">Gerenciar Grupos</span>
+                  </Button>
+                </div>
+              </div>
+            )}
             <div>
               <Label htmlFor="value" className="text-left">Valor (R$)</Label>
               <Input
@@ -572,6 +643,43 @@ export default function FinancyCanvas() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={showGroupsModal} onOpenChange={setShowGroupsModal}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>Gerenciar Grupos de Despesa</DialogTitle>
+                  <DialogDescription>Adicione ou remova grupos para categorizar suas despesas.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleAddGroup} className="flex items-center space-x-2 py-4">
+                  <Input 
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      placeholder="Nome do novo grupo"
+                  />
+                  <Button type="submit" size="icon">
+                      <PlusCircle className="h-4 w-4" />
+                  </Button>
+              </form>
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+                  {groups && groups.length > 0 ? (
+                      groups.map(group => (
+                          <div key={group.id} className="flex items-center justify-between bg-secondary p-2 rounded-md">
+                              <span className="text-secondary-foreground">{group.name}</span>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => handleDeleteGroup(group.id)}>
+                                  <Trash2 className="h-4 w-4"/>
+                              </Button>
+                          </div>
+                      ))
+                  ) : (
+                      <p className="text-center text-muted-foreground py-4">Nenhum grupo cadastrado.</p>
+                  )}
+              </div>
+              <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowGroupsModal(false)}>Fechar</Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
+
 
       <Dialog open={showReportModal} onOpenChange={handleCloseReportModal}>
         <DialogContent className="sm:max-w-lg">
@@ -632,8 +740,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
-    
-
-    
