@@ -35,9 +35,30 @@
         "groupId": {
             "type": "string",
             "description": "ID do grupo ao qual a transação pertence (opcional)."
+        },
+        "isParcela": {
+          "type": "boolean",
+          "description": "Indica se a transação é uma parcela."
+        },
+        "parcelaId": {
+            "type": "string",
+            "description": "ID que agrupa todas as parcelas de uma mesma compra."
+        },
+        "parcelaAtual": {
+            "type": "number",
+            "description": "O número da parcela atual (ex: 1, 2, 3)."
+        },
+        "totalParcelas": {
+            "type": "number",
+            "description": "O número total de parcelas da compra."
+        },
+        "status": {
+            "type": "string",
+            "description": "O status da transação, usado principalmente para parcelas.",
+            "enum": ["pago", "pendente"]
         }
       },
-      "required": ["userId", "descricao", "valor", "tipo", "data"]
+      "required": ["userId", "descricao", "valor", "tipo", "data", "status"]
     },
     "User": {
       "$schema": "http://json-schema.org/draft-07/schema#",

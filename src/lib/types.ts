@@ -9,6 +9,11 @@ export interface Transaction {
   tipo: 'receita' | 'despesa';
   data: Timestamp;
   groupId?: string;
+  isParcela?: boolean;
+  parcelaId?: string;
+  parcelaAtual?: number;
+  totalParcelas?: number;
+  status: 'pago' | 'pendente';
 }
 
 export interface Group {
