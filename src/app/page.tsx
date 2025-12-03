@@ -4,9 +4,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX, FileText } from 'lucide-react';
 import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
-import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking } from '@/firebase';
+import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
-import { format, parse, addMonths, getYear, getMonth, set } from 'date-fns';
+import { format, parse, addMonths, getYear, getMonth, set, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts';
@@ -69,6 +69,7 @@ export default function FinancyCanvas() {
   const [showDescriptionsModal, setShowDescriptionsModal] = useState(false);
   const [reportView, setReportView] = useState<'summary' | 'all' | 'despesas' | 'receitas' | 'parcelas'>('summary');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
+  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [installmentToDelete, setInstallmentToDelete] = useState<Transaction | null>(null);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
@@ -296,7 +297,7 @@ export default function FinancyCanvas() {
         finalObservation = finalObservation ? `${refText} - ${finalObservation}` : refText;
     }
 
-    const newTransaction: Omit<Transaction, 'id' | 'data'> & { data: Date; groupId?: string | null } = {
+    const transactionData = {
       userId: user.uid,
       descricao: description.trim(),
       valor: numericValue,
@@ -304,11 +305,20 @@ export default function FinancyCanvas() {
       data: date,
       status: 'pago',
       observacao: finalObservation || undefined,
+      groupId: (selectedGroupId && selectedGroupId !== 'none') ? selectedGroupId : null,
     };
-    if (selectedGroupId && selectedGroupId !== 'none') newTransaction.groupId = selectedGroupId;
-    const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
-    addDocumentNonBlocking(userTransactionsCollection, newTransaction);
-    setDescription(''); setValue(''); setDate(new Date()); setSelectedGroupId(null); setObservation(''); setReferenceMonth(undefined); setShowModal(false); setError(''); setIsSubmitting(false);
+    
+    if (transactionToEdit) {
+      const transactionRef = doc(firestore, 'users', user.uid, 'transactions', transactionToEdit.id);
+      updateDocumentNonBlocking(transactionRef, transactionData);
+      toast({ title: "Sucesso!", description: "Sua transação foi atualizada." });
+    } else {
+      const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
+      addDocumentNonBlocking(userTransactionsCollection, transactionData);
+      toast({ title: "Sucesso!", description: "Sua transação foi adicionada." });
+    }
+
+    resetAndCloseModal();
   };
 
   const handleInstallmentSubmit = async (e: React.FormEvent) => {
@@ -353,15 +363,8 @@ export default function FinancyCanvas() {
 
     await batch.commit();
 
-    // Reset form
-    setDescription('');
-    setInstallmentTotalValue('');
-    setInstallmentCount('');
-    setDate(new Date());
-    setSelectedGroupId(null);
-    setShowInstallmentModal(false);
-    setError('');
-    setIsSubmitting(false);
+    toast({ title: "Sucesso!", description: "Sua compra parcelada foi adicionada." });
+    resetAndCloseInstallmentModal();
   };
 
 
@@ -370,6 +373,7 @@ export default function FinancyCanvas() {
     const transactionRef = doc(firestore, 'users', user.uid, 'transactions', transactionToDelete);
     deleteDocumentNonBlocking(transactionRef);
     setTransactionToDelete(null);
+    toast({ title: "Excluído!", description: "A transação foi removida." });
   };
   
   const handleDeleteInstallment = async () => {
@@ -460,11 +464,62 @@ export default function FinancyCanvas() {
       deleteDocumentNonBlocking(descriptionRef);
   };
 
-  const openModal = (type: 'receita' | 'despesa') => {
+  const resetAndCloseModal = () => {
+    setDescription(''); 
+    setValue(''); 
+    setDate(new Date()); 
+    setSelectedGroupId(null); 
+    setObservation(''); 
+    setReferenceMonth(undefined); 
+    setTransactionToEdit(null);
+    setShowModal(false); 
+    setError(''); 
+    setIsSubmitting(false);
+  }
+  
+  const resetAndCloseInstallmentModal = () => {
+    setDescription('');
+    setInstallmentTotalValue('');
+    setInstallmentCount('');
+    setDate(new Date());
+    setSelectedGroupId(null);
+    setShowInstallmentModal(false);
+    setError('');
+    setIsSubmitting(false);
+  }
+  
+  const openModalForNew = (type: 'receita' | 'despesa') => {
+    setTransactionToEdit(null);
     setFormType(type);
     setShowModal(true);
   }
   
+  const openModalForEdit = (transaction: Transaction) => {
+    if (transaction.isParcela) {
+      toast({
+        variant: "destructive",
+        title: "Ação não permitida",
+        description: "A edição de parcelas individuais não é suportada. Exclua o parcelamento e crie um novo se necessário.",
+      });
+      return;
+    }
+    setTransactionToEdit(transaction);
+    setFormType(transaction.tipo);
+    setDescription(transaction.descricao);
+    setValue(transaction.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+    
+    let transactionDate = transaction.data?.toDate();
+    if (transactionDate && isValid(transactionDate)) {
+      setDate(transactionDate);
+    } else {
+      setDate(new Date());
+    }
+    
+    setSelectedGroupId(transaction.groupId || null);
+    setObservation(transaction.observacao || '');
+    setShowModal(true);
+  };
+
   const openInstallmentModal = () => {
     setFormType('despesa'); // Installments are always expenses
     setShowInstallmentModal(true);
@@ -503,7 +558,7 @@ export default function FinancyCanvas() {
   }
 
   const BalanceIcon = formType === 'receita' ? ArrowUp : ArrowDown;
-  const modalTitle = formType === 'receita' ? 'Adicionar Receita' : 'Adicionar Despesa';
+  const modalTitle = transactionToEdit ? `Editar ${transactionToEdit.tipo === 'receita' ? 'Receita' : 'Despesa'}` : `Adicionar ${formType === 'receita' ? 'Receita' : 'Despesa'}`;
   const modalColor = formType === 'receita' ? 'text-emerald-500' : 'text-red-500';
 
   const pageError = transactionsError || error;
@@ -583,16 +638,22 @@ export default function FinancyCanvas() {
                           const isIncome = d.tipo === 'receita';
                           const color = isIncome ? 'emerald' : 'red';
                           return (
-                            <li key={d.id} className={`flex justify-between items-start p-3 bg-card border-l-4 border-${color}-400 rounded-lg`}>
-                                <div className="flex items-center">
+                            <li key={d.id} className={`group flex justify-between items-start p-3 bg-card border-l-4 border-${color}-400 rounded-lg`}>
+                                <div className="flex items-center min-w-0">
                                     <div className="mr-3">{d.status === 'pago' ? <CheckSquare className={`h-5 w-5 text-emerald-500`} /> : <Clock className={`h-5 w-5 text-amber-500`} />}</div>
-                                    <div>
-                                        <p className="font-medium text-sm text-foreground">{d.descricao}</p>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm text-foreground truncate">{d.descricao}</p>
                                         {d.groupId && groupMap.get(d.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(d.groupId)}</span>)}
                                         <p className="text-xs text-muted-foreground mt-1">{d.data?.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                                     </div>
                                 </div>
-                                <p className={`font-semibold text-${color}-600 dark:text-${color}-400 whitespace-nowrap ml-4`}>{isIncome ? '+' : '-'} {formatCurrency(d.valor)}</p>
+                                <div className="flex items-center flex-shrink-0">
+                                  <p className={`font-semibold text-${color}-600 dark:text-${color}-400 whitespace-nowrap ml-4`}>{isIncome ? '+' : '-'} {formatCurrency(d.valor)}</p>
+                                  {!d.isParcela && (
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(d)}><Edit className="h-4 w-4" /></Button>
+                                  )}
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => d.isParcela ? setInstallmentToDelete(d) : setTransactionToDelete(d.id)}><Trash2 className="h-4 w-4" /></Button>
+                                </div>
                             </li>
                         )})}
                     </ul>
@@ -714,8 +775,8 @@ export default function FinancyCanvas() {
         </header>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Button onClick={() => openModal('receita')} className="p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-5 h-5 mr-2" />Entradas</Button>
-          <Button onClick={() => openModal('despesa')} className="p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-5 h-5 mr-2" />Saídas</Button>
+          <Button onClick={() => openModalForNew('receita')} className="p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-5 h-5 mr-2" />Entradas</Button>
+          <Button onClick={() => openModalForNew('despesa')} className="p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-5 h-5 mr-2" />Saídas</Button>
           <Button onClick={openInstallmentModal} className="p-6 bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-5 h-5 mr-2" />Lançar Parcelados</Button>
           <Button onClick={() => openReport('summary')} className="p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><FileText className="w-5 h-5 mr-2" />Relatórios</Button>
         </div>
@@ -746,17 +807,20 @@ export default function FinancyCanvas() {
               </div>
               {recentTransactions.length > 0 ? <ul className="space-y-3">{recentTransactions.map((t) => (
                   <li key={t.id} className={`group flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 ${t.tipo === 'receita' ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 dark:border-emerald-700' : 'border-red-400 bg-red-50/50 hover:bg-red-50 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:border-red-700'}`}>
-                    <div className="flex items-center">
+                    <div className="flex items-center min-w-0">
                       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mr-3 ${t.tipo === 'receita' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-800/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-800/30 dark:text-red-400'}`}>{t.tipo === 'receita' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}</div>
-                      <div>
-                        <p className="font-medium text-foreground leading-tight text-sm">{t.descricao}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-foreground leading-tight text-sm truncate">{t.descricao}</p>
                         {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(t.groupId)}</span>}
                         <p className="text-xs text-muted-foreground mt-0.5">{t.data && t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })}</p>
                       </div>
                     </div>
                     <div className="flex items-center flex-shrink-0 ml-4">
                       <p className={`font-semibold text-sm ${t.tipo === 'receita' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}</p>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
+                      {!t.isParcela && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </li>))}</ul>
               : <div className="py-6 text-center text-muted-foreground"><p>Nenhuma transação paga registrada ainda.</p></div>}
@@ -765,7 +829,7 @@ export default function FinancyCanvas() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setDescription(''); setSelectedGroupId(null); setObservation(''); setReferenceMonth(undefined); } setShowModal(isOpen); }}>
+      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { resetAndCloseModal() } else { setShowModal(true) } }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className={`text-2xl font-bold ${modalColor}`}>{modalTitle}</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
@@ -813,14 +877,14 @@ export default function FinancyCanvas() {
               </>
             )}
             <DialogFooter className="pt-4">
-              <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
+              <Button type="button" variant="outline" onClick={resetAndCloseModal}>Cancelar</Button>
               <Button type="submit" disabled={isSubmitting} className={`${formType === 'receita' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-red-500 hover:bg-red-600'} text-white`}>{isSubmitting ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <BalanceIcon className="mr-2 h-4 w-4" />}Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
       
-      <Dialog open={showInstallmentModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setDescription(''); setSelectedGroupId(null); } setShowInstallmentModal(isOpen); }}>
+      <Dialog open={showInstallmentModal} onOpenChange={(isOpen) => { if (!isOpen) { resetAndCloseInstallmentModal() } else { setShowInstallmentModal(true) } }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className="text-2xl font-bold text-sky-500">Adicionar Compra Parcelada</DialogTitle></DialogHeader>
           <form onSubmit={handleInstallmentSubmit} className="space-y-4 pt-4">
@@ -854,7 +918,7 @@ export default function FinancyCanvas() {
               <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal mt-1", !date && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{date ? format(date, "PPP", { locale: ptBR }) : <span>Escolha uma data</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} initialFocus locale={ptBR} /></PopoverContent></Popover>
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="outline" onClick={() => setShowInstallmentModal(false)}>Cancelar</Button>
+              <Button type="button" variant="outline" onClick={resetAndCloseInstallmentModal}>Cancelar</Button>
               <Button type="submit" disabled={isSubmitting} className="bg-sky-500 hover:bg-sky-600 text-white">{isSubmitting ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Clock className="mr-2 h-4 w-4" />}Salvar Parcelamento</Button>
             </DialogFooter>
           </form>
