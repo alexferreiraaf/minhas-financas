@@ -17,3 +17,10 @@ export interface Group {
   name: string;
   tipo: 'receita' | 'despesa';
 }
+
+export interface PredefinedDescription {
+  id: string;
+  userId: string;
+  name: string;
+  tipo: 'receita' | 'despesa';
+}

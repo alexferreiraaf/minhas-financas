@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut } from 'lucide-react';
-import type { Transaction, Group } from '@/lib/types';
+import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser } from '@/firebase';
 import { collection, query, doc, where } from 'firebase/firestore';
 import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse } from 'date-fns';
@@ -46,8 +46,15 @@ export default function FinancyCanvas() {
     return query(collection(firestore, 'users', user.uid, 'groups'));
   }, [firestore, user]);
 
+  const descriptionsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(collection(firestore, 'users', user.uid, 'predefinedDescriptions'));
+  }, [firestore, user]);
+
+
   const { data: rawTransactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
   const { data: allGroups, isLoading: isLoadingGroups } = useCollection<Group>(groupsQuery);
+  const { data: allDescriptions, isLoading: isLoadingDescriptions } = useCollection<PredefinedDescription>(descriptionsQuery);
 
 
   const [error, setError] = useState('');
@@ -55,6 +62,7 @@ export default function FinancyCanvas() {
   const [showModal, setShowModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showGroupsModal, setShowGroupsModal] = useState(false);
+  const [showDescriptionsModal, setShowDescriptionsModal] = useState(false);
   const [reportView, setReportView] = useState<'summary' | 'despesas' | 'receitas'>('summary');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
@@ -63,6 +71,7 @@ export default function FinancyCanvas() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
+  const [newDescriptionName, setNewDescriptionName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // State for report filtering
@@ -81,6 +90,14 @@ export default function FinancyCanvas() {
       despesaGroups: allGroups.filter(g => g.tipo === 'despesa'),
     };
   }, [allGroups]);
+
+  const { receitaDescriptions, despesaDescriptions } = useMemo(() => {
+    if (!allDescriptions) return { receitaDescriptions: [], despesaDescriptions: [] };
+    return {
+      receitaDescriptions: allDescriptions.filter(d => d.tipo === 'receita'),
+      despesaDescriptions: allDescriptions.filter(d => d.tipo === 'despesa'),
+    };
+  }, [allDescriptions]);
 
   // Client-side sorting because orderBy is not in the query
   const transactions = useMemo(() => {
@@ -278,13 +295,33 @@ export default function FinancyCanvas() {
       deleteDocumentNonBlocking(groupRef);
   };
 
+  const handleAddDescription = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !firestore || newDescriptionName.trim() === '') return;
+
+    const newDescription = {
+        userId: user.uid,
+        name: newDescriptionName.trim(),
+        tipo: formType,
+    };
+    const userDescriptionsCollection = collection(firestore, 'users', user.uid, 'predefinedDescriptions');
+    addDocumentNonBlocking(userDescriptionsCollection, newDescription);
+    setNewDescriptionName('');
+  };
+
+  const handleDeleteDescription = (descriptionId: string) => {
+      if (!user || !firestore) return;
+      const descriptionRef = doc(firestore, 'users', user.uid, 'predefinedDescriptions', descriptionId);
+      deleteDocumentNonBlocking(descriptionRef);
+  };
+
 
   const openModal = (type: 'receita' | 'despesa') => {
     setFormType(type);
     setShowModal(true);
   }
 
-  const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups || !user;
+  const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups || isLoadingDescriptions || !user;
   
   const handleCloseReportModal = () => {
     setShowReportModal(false);
@@ -417,6 +454,7 @@ export default function FinancyCanvas() {
   };
   
   const groupsForForm = formType === 'receita' ? receitaGroups : despesaGroups;
+  const descriptionsForForm = formType === 'receita' ? receitaDescriptions : despesaDescriptions;
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 md:p-8 font-body">
@@ -566,7 +604,7 @@ export default function FinancyCanvas() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setSelectedGroupId(null); } setShowModal(isOpen); }}>
+      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setDescription(''); setSelectedGroupId(null); } setShowModal(isOpen); }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle className={`text-2xl font-bold ${modalColor}`}>{modalTitle}</DialogTitle>
@@ -581,14 +619,24 @@ export default function FinancyCanvas() {
             )}
             <div>
               <Label htmlFor="description" className="text-left">Nome da {formType === 'receita' ? 'Entrada' : 'Saída'}</Label>
-              <Input
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={formType === 'receita' ? "Ex: Salário" : "Ex: Aluguel"}
-                required
-                className="mt-1"
-              />
+              <div className="flex items-center space-x-2 mt-1">
+                <Select onValueChange={setDescription} value={description}>
+                    <SelectTrigger id="description">
+                        <SelectValue placeholder="Selecione um nome" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {descriptionsForForm?.map((desc) => (
+                            <SelectItem key={desc.id} value={desc.name}>
+                                {desc.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Button type="button" variant="outline" size="icon" onClick={() => setShowDescriptionsModal(true)}>
+                    <Settings className="h-4 w-4" />
+                    <span className="sr-only">Gerenciar Nomes</span>
+                </Button>
+              </div>
             </div>
             
             <div>
@@ -662,6 +710,42 @@ export default function FinancyCanvas() {
             </DialogFooter>
           </form>
         </DialogContent>
+      </Dialog>
+      
+      <Dialog open={showDescriptionsModal} onOpenChange={setShowDescriptionsModal}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>Gerenciar Nomes de {formType === 'receita' ? 'Entrada' : 'Saída'}</DialogTitle>
+                  <DialogDescription>Adicione ou remova nomes para seus lançamentos.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleAddDescription} className="flex items-center space-x-2 py-4">
+                  <Input 
+                      value={newDescriptionName}
+                      onChange={(e) => setNewDescriptionName(e.target.value)}
+                      placeholder="Nome do novo lançamento"
+                  />
+                  <Button type="submit" size="icon">
+                      <PlusCircle className="h-4 w-4" />
+                  </Button>
+              </form>
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+                  {descriptionsForForm && descriptionsForForm.length > 0 ? (
+                      descriptionsForForm.map(desc => (
+                          <div key={desc.id} className="flex items-center justify-between bg-secondary p-2 rounded-md">
+                              <span className="text-secondary-foreground">{desc.name}</span>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => handleDeleteDescription(desc.id)}>
+                                  <Trash2 className="h-4 w-4"/>
+                              </Button>
+                          </div>
+                      ))
+                  ) : (
+                      <p className="text-center text-muted-foreground py-4">Nenhum nome cadastrado.</p>
+                  )}
+              </div>
+              <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowDescriptionsModal(false)}>Fechar</Button>
+              </DialogFooter>
+          </DialogContent>
       </Dialog>
 
       <Dialog open={showGroupsModal} onOpenChange={setShowGroupsModal}>

@@ -12,6 +12,7 @@
  *   - Users can only read and write their own user profile data.
  *   - Users can only create, read, update, and delete transactions associated with their own user ID.
  *   - Users can manage their own expense groups.
+ *   - Users can manage their own predefined descriptions.
  *   - Listing all users is disallowed to protect user privacy.
  *   - Data validation is relaxed to allow for rapid prototyping, focusing on ownership and
  *     relational integrity checks rather than exhaustive schema validation.
@@ -58,6 +59,14 @@ service cloud.firestore {
        */
       match /groups/{groupId} {
           allow read, write: if isSignedIn() && isOwner(userId);
+      }
+
+      /**
+       * @description Secures the user's predefined descriptions subcollection.
+       * @path /databases/{database}/documents/users/{userId}/predefinedDescriptions/{descriptionId}
+       */
+      match /predefinedDescriptions/{descriptionId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
       }
     }
   }

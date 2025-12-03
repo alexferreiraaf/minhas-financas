@@ -77,6 +77,32 @@
             }
         },
         "required": ["userId", "name", "tipo"]
+    },
+    "PredefinedDescription": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PredefinedDescription",
+      "description": "Representa um nome de transação pré-definido pelo usuário.",
+      "type": "object",
+      "properties": {
+        "id": {
+            "type": "string",
+            "description": "O ID único da descrição."
+        },
+        "userId": {
+            "type": "string",
+            "description": "ID do usuário que criou a descrição."
+        },
+        "name": {
+            "type": "string",
+            "description": "O nome pré-definido para a transação (ex: 'Salário', 'Aluguel')."
+        },
+        "tipo": {
+            "type": "string",
+            "description": "Tipo de descrição: 'receita' ou 'despesa'.",
+            "enum": ["receita", "despesa"]
+        }
+      },
+      "required": ["userId", "name", "tipo"]
     }
   },
   "auth": {
@@ -106,6 +132,14 @@
             "entityName": "Group",
             "schema": { "$ref": "#/backend/entities/Group" },
             "description": "Armazena os grupos de transações de um usuário."
+        }
+      },
+      {
+        "path": "users/{userId}/predefinedDescriptions/{descriptionId}",
+        "definition": {
+          "entityName": "PredefinedDescription",
+          "schema": { "$ref": "#/backend/entities/PredefinedDescription" },
+          "description": "Armazena as descrições de transação pré-definidas por um usuário."
         }
       }
     ]
