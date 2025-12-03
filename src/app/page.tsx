@@ -402,6 +402,11 @@ export default function FinancyCanvas() {
     setShowInstallmentModal(true);
   }
 
+  const openInstallmentsReport = () => {
+    setReportView('parcelas');
+    setShowReportModal(true);
+  };
+
   const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups || isLoadingDescriptions || !user;
   
   const handleCloseReportModal = () => {
@@ -576,8 +581,8 @@ export default function FinancyCanvas() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Button onClick={() => openModal('receita')} className="p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-5 h-5 mr-2" />Entradas</Button>
           <Button onClick={() => openModal('despesa')} className="p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-5 h-5 mr-2" />Saídas</Button>
-          <Button onClick={openInstallmentModal} className="p-6 bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><Clock className="w-5 h-5 mr-2" />Parcelados</Button>
-          <Button onClick={() => setShowReportModal(true)} className="p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PieChart className="w-5 h-5 mr-2" />Relatório</Button>
+          <Button onClick={openInstallmentModal} className="p-6 bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-5 h-5 mr-2" />Lançar Parcelados</Button>
+          <Button onClick={openInstallmentsReport} className="p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PieChart className="w-5 h-5 mr-2" />Meus Parcelados</Button>
         </div>
 
         <Card className="shadow-xl">
