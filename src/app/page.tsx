@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit } from 'lucide-react';
 import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking } from '@/firebase';
-import { collection, query, doc, where, writeBatch, updateDoc } from 'firebase/firestore';
+import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
 import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -68,6 +68,7 @@ export default function FinancyCanvas() {
   const [showDescriptionsModal, setShowDescriptionsModal] = useState(false);
   const [reportView, setReportView] = useState<'summary' | 'despesas' | 'receitas' | 'parcelas'>('summary');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
+  const [installmentToDelete, setInstallmentToDelete] = useState<Transaction | null>(null);
   const [formType, setFormType] = useState<'despesa' | 'receita'>('despesa');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
@@ -341,6 +342,44 @@ export default function FinancyCanvas() {
     deleteDocumentNonBlocking(transactionRef);
     setTransactionToDelete(null);
   };
+  
+  const handleDeleteInstallment = async () => {
+    if (!user || !firestore || !installmentToDelete || !installmentToDelete.parcelaId) return;
+
+    try {
+        const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
+        const q = query(userTransactionsCollection, where("parcelaId", "==", installmentToDelete.parcelaId));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+            toast({ variant: "destructive", title: "Erro", description: "Nenhuma parcela encontrada para exclusão." });
+            setInstallmentToDelete(null);
+            return;
+        }
+
+        const batch = writeBatch(firestore);
+        querySnapshot.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+
+        toast({
+            title: "Excluído!",
+            description: "A compra parcelada foi removida com sucesso.",
+        });
+    } catch (e) {
+        console.error("Erro ao excluir parcelamento:", e);
+        toast({
+            variant: "destructive",
+            title: "Erro",
+            description: "Não foi possível excluir o parcelamento.",
+        });
+    } finally {
+        setInstallmentToDelete(null);
+    }
+  };
+
 
   const handleMarkAsPaid = async (transactionId: string) => {
     if (!user || !firestore) return;
@@ -531,19 +570,19 @@ export default function FinancyCanvas() {
                                   {item.groupId && groupMap.get(item.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(item.groupId)}</span>)}
                                   <p className="text-xs text-muted-foreground mt-1">{format(item.data.toDate(), 'dd/MM/yyyy')} - {formatCurrency(item.valor)}</p>
                               </div>
-                              <div className="flex items-center ml-4">
+                              <div className="flex items-center ml-2">
                                 {item.status === 'pendente' ? (
                                     <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-600 border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => handleMarkAsPaid(item.id)}>
                                         <CheckSquare className="mr-2 h-4 w-4"/> Pagar
                                     </Button>
                                 ) : (
-                                    <div className="flex items-center text-xs font-semibold text-emerald-600">
+                                    <div className="flex items-center text-xs font-semibold text-emerald-600 px-2">
                                         <CheckSquare className="mr-1.5 h-4 w-4"/> Pago
                                     </div>
                                 )}
-                                <Button size="icon" variant="ghost" className="h-8 w-8 ml-1" disabled>
-                                    <Edit className="h-4 w-4"/>
-                                    <span className="sr-only">Editar Parcela</span>
+                                <Button size="icon" variant="ghost" className="h-8 w-8 ml-1 text-muted-foreground hover:text-destructive" onClick={() => setInstallmentToDelete(item)}>
+                                    <Trash2 className="h-4 w-4"/>
+                                    <span className="sr-only">Excluir Parcelamento</span>
                                 </Button>
                               </div>
                           </li>
@@ -748,6 +787,24 @@ export default function FinancyCanvas() {
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Você tem certeza?</AlertDialogTitle><AlertDialogDescription>Esta ação não pode ser desfeita. Isso excluirá permanentemente sua transação de nossos servidores.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel onClick={() => setTransactionToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDeleteTransaction}>Excluir</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!installmentToDelete} onOpenChange={(isOpen) => !isOpen && setInstallmentToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Compra Parcelada?</AlertDialogTitle>
+            <AlertDialogDescription>
+                Você tem certeza que deseja excluir esta compra parcelada? Todas as parcelas
+                (<span className="font-semibold">{installmentToDelete?.totalParcelas}</span>) 
+                relacionadas a <span className="font-semibold">"{installmentToDelete?.descricao.split(' (')[0]}"</span> serão removidas. 
+                Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setInstallmentToDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteInstallment} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Excluir Tudo</AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
