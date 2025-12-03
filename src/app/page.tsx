@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from "@/hooks/use-toast";
+import { Textarea } from '@/components/ui/textarea';
 
 
 export default function FinancyCanvas() {
@@ -77,6 +78,7 @@ export default function FinancyCanvas() {
   const [newGroupName, setNewGroupName] = useState('');
   const [newDescriptionName, setNewDescriptionName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [observation, setObservation] = useState('');
   
   // State for installments
   const [installmentTotalValue, setInstallmentTotalValue] = useState('');
@@ -290,11 +292,12 @@ export default function FinancyCanvas() {
       tipo: formType,
       data: date,
       status: 'pago',
+      observacao: observation.trim() || undefined,
     };
     if (selectedGroupId && selectedGroupId !== 'none') newTransaction.groupId = selectedGroupId;
     const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
     addDocumentNonBlocking(userTransactionsCollection, newTransaction);
-    setDescription(''); setValue(''); setDate(new Date()); setSelectedGroupId(null); setShowModal(false); setError(''); setIsSubmitting(false);
+    setDescription(''); setValue(''); setDate(new Date()); setSelectedGroupId(null); setObservation(''); setShowModal(false); setError(''); setIsSubmitting(false);
   };
 
   const handleInstallmentSubmit = async (e: React.FormEvent) => {
@@ -717,7 +720,7 @@ export default function FinancyCanvas() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setDescription(''); setSelectedGroupId(null); } setShowModal(isOpen); }}>
+      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setDescription(''); setSelectedGroupId(null); setObservation(''); } setShowModal(isOpen); }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className={`text-2xl font-bold ${modalColor}`}>{modalTitle}</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
@@ -744,6 +747,12 @@ export default function FinancyCanvas() {
                 <Label htmlFor="date" className="text-left">Data</Label>
                 <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal mt-1", !date && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{date ? format(date, "PPP", { locale: ptBR }) : <span>Escolha uma data</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} initialFocus locale={ptBR} /></PopoverContent></Popover>
             </div>
+             {formType === 'despesa' && (
+              <div>
+                <Label htmlFor="observation" className="text-left">Observação</Label>
+                <Textarea id="observation" value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="Adicione uma anotação (opcional)" className="mt-1" />
+              </div>
+            )}
             <DialogFooter className="pt-4">
               <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
               <Button type="submit" disabled={isSubmitting} className={`${formType === 'receita' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-red-500 hover:bg-red-600'} text-white`}>{isSubmitting ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <BalanceIcon className="mr-2 h-4 w-4" />}Salvar</Button>

@@ -22,6 +22,10 @@
           "type": "number",
           "description": "O valor da transação."
         },
+        "observacao": {
+          "type": "string",
+          "description": "Observações ou anotações sobre a transação."
+        },
         "tipo": {
           "type": "string",
           "description": "Tipo de transação: 'receita' ou 'despesa'.",

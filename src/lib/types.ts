@@ -6,6 +6,7 @@ export interface Transaction {
   userId: string;
   descricao: string;
   valor: number;
+  observacao?: string;
   tipo: 'receita' | 'despesa';
   data: Timestamp;
   groupId?: string;
