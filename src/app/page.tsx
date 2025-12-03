@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX } from 'lucide-react';
 import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
@@ -85,6 +85,10 @@ export default function FinancyCanvas() {
   // State for report filtering
   const [reportPeriod, setReportPeriod] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('all');
   const [reportSearchTerm, setReportSearchTerm] = useState('');
+  
+  // State for installment report filtering
+  const [installmentGroupFilter, setInstallmentGroupFilter] = useState<string>('all');
+  const [installmentNameFilter, setInstallmentNameFilter] = useState<string>('all');
 
   const groupMap = useMemo(() => {
     if (!allGroups) return new Map();
@@ -222,8 +226,19 @@ export default function FinancyCanvas() {
   }, [filteredReceitas]);
 
   const filteredInstallments = useMemo(() => {
-    return filterTransactionsByPeriod(installments, reportPeriod, reportSearchTerm);
-  }, [installments, reportPeriod, reportSearchTerm, filterTransactionsByPeriod]);
+      let filtered = filterTransactionsByPeriod(installments, reportPeriod, reportSearchTerm);
+  
+      if (installmentGroupFilter !== 'all') {
+          filtered = filtered.filter(item => item.groupId === installmentGroupFilter);
+      }
+  
+      if (installmentNameFilter !== 'all') {
+          // The description of an installment is "Name (1/12)", so we check if it starts with the filter name.
+          filtered = filtered.filter(item => item.descricao.startsWith(installmentNameFilter));
+      }
+  
+      return filtered;
+  }, [installments, reportPeriod, reportSearchTerm, filterTransactionsByPeriod, installmentGroupFilter, installmentNameFilter]);
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -450,7 +465,13 @@ export default function FinancyCanvas() {
   
   const handleCloseReportModal = () => {
     setShowReportModal(false);
-    setTimeout(() => { setReportView('summary'); setReportPeriod('all'); setReportSearchTerm(''); }, 300);
+    setTimeout(() => { 
+        setReportView('summary'); 
+        setReportPeriod('all'); 
+        setReportSearchTerm(''); 
+        setInstallmentGroupFilter('all');
+        setInstallmentNameFilter('all');
+    }, 300);
   };
   
   const handleLogout = () => {
@@ -550,48 +571,75 @@ export default function FinancyCanvas() {
   
   const renderInstallmentsReport = () => {
     return (
-      <div className="py-4 pr-2">
-          <div className="flex flex-col space-y-4">
-              <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Filtrar por descrição..." value={reportSearchTerm} onChange={(e) => setReportSearchTerm(e.target.value)} className="pl-10" />
-                  {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
-              </div>
-              <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
-                  <TabsList className="grid w-full grid-cols-5"><TabsTrigger value="all">Total</TabsTrigger><TabsTrigger value="day">Dia</TabsTrigger><TabsTrigger value="week">Semana</TabsTrigger><TabsTrigger value="month">Mês</TabsTrigger><TabsTrigger value="year">Ano</TabsTrigger></TabsList>
-              </Tabs>
-              <div className="max-h-[45vh] overflow-y-auto pr-2">
-                {filteredInstallments.length > 0 ? (
-                  <ul className="space-y-3">
-                      {filteredInstallments.map(item => (
-                          <li key={item.id} className={`group flex justify-between items-center p-3 bg-card border-l-4 rounded-lg ${item.status === 'pago' ? 'border-emerald-400' : 'border-amber-400'}`}>
-                              <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm text-foreground truncate">{item.descricao}</p>
-                                  {item.groupId && groupMap.get(item.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(item.groupId)}</span>)}
-                                  <p className="text-xs text-muted-foreground mt-1">{format(item.data.toDate(), 'dd/MM/yyyy')} - {formatCurrency(item.valor)}</p>
-                              </div>
-                              <div className="flex items-center ml-2">
-                                {item.status === 'pendente' ? (
-                                    <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-600 border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => handleMarkAsPaid(item.id)}>
-                                        <CheckSquare className="mr-2 h-4 w-4"/> Pagar
-                                    </Button>
-                                ) : (
-                                    <div className="flex items-center text-xs font-semibold text-emerald-600 px-2">
-                                        <CheckSquare className="mr-1.5 h-4 w-4"/> Pago
+        <div className="py-4 pr-2">
+            <div className="flex flex-col space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Select value={installmentGroupFilter} onValueChange={setInstallmentGroupFilter}>
+                        <SelectTrigger><SelectValue placeholder="Filtrar por grupo..." /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todos os Grupos</SelectItem>
+                            {despesaGroups.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                     <Select value={installmentNameFilter} onValueChange={setInstallmentNameFilter}>
+                        <SelectTrigger><SelectValue placeholder="Filtrar por nome..." /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todos os Nomes</SelectItem>
+                            {despesaDescriptions.map(d => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                 {(installmentGroupFilter !== 'all' || installmentNameFilter !== 'all') && (
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="text-primary self-start" 
+                        onClick={() => { setInstallmentGroupFilter('all'); setInstallmentNameFilter('all'); }}>
+                        <FilterX className="mr-2 h-4 w-4" />
+                        Limpar Filtros
+                    </Button>
+                )}
+
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Buscar na lista..." value={reportSearchTerm} onChange={(e) => setReportSearchTerm(e.target.value)} className="pl-10" />
+                    {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
+                </div>
+                <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
+                    <TabsList className="grid w-full grid-cols-5"><TabsTrigger value="all">Total</TabsTrigger><TabsTrigger value="day">Dia</TabsTrigger><TabsTrigger value="week">Semana</TabsTrigger><TabsTrigger value="month">Mês</TabsTrigger><TabsTrigger value="year">Ano</TabsTrigger></TabsList>
+                </Tabs>
+                <div className="max-h-[45vh] overflow-y-auto pr-2">
+                    {filteredInstallments.length > 0 ? (
+                        <ul className="space-y-3">
+                            {filteredInstallments.map(item => (
+                                <li key={item.id} className={`group flex justify-between items-center p-3 bg-card border-l-4 rounded-lg ${item.status === 'pago' ? 'border-emerald-400' : 'border-amber-400'}`}>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm text-foreground truncate">{item.descricao}</p>
+                                        {item.groupId && groupMap.get(item.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(item.groupId)}</span>)}
+                                        <p className="text-xs text-muted-foreground mt-1">{format(item.data.toDate(), 'dd/MM/yyyy')} - {formatCurrency(item.valor)}</p>
                                     </div>
-                                )}
-                                <Button size="icon" variant="ghost" className="h-8 w-8 ml-1 text-muted-foreground hover:text-destructive" onClick={() => setInstallmentToDelete(item)}>
-                                    <Trash2 className="h-4 w-4"/>
-                                    <span className="sr-only">Excluir Parcelamento</span>
-                                </Button>
-                              </div>
-                          </li>
-                      ))}
-                  </ul>
-                ) : <div className="text-center py-10 text-muted-foreground"><p>Nenhuma parcela encontrada.</p></div>}
-              </div>
-          </div>
-      </div>
+                                    <div className="flex items-center ml-2">
+                                        {item.status === 'pendente' ? (
+                                            <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-600 border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => handleMarkAsPaid(item.id)}>
+                                                <CheckSquare className="mr-2 h-4 w-4"/> Pagar
+                                            </Button>
+                                        ) : (
+                                            <div className="flex items-center text-xs font-semibold text-emerald-600 px-2">
+                                                <CheckSquare className="mr-1.5 h-4 w-4"/> Pago
+                                            </div>
+                                        )}
+                                        <Button size="icon" variant="ghost" className="h-8 w-8 ml-1 text-muted-foreground hover:text-destructive" onClick={() => setInstallmentToDelete(item)}>
+                                            <Trash2 className="h-4 w-4"/>
+                                            <span className="sr-only">Excluir Parcelamento</span>
+                                        </Button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : <div className="text-center py-10 text-muted-foreground"><p>Nenhuma parcela encontrada para os filtros selecionados.</p></div>}
+                </div>
+            </div>
+        </div>
     );
   };
 
@@ -810,5 +858,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
