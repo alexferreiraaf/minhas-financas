@@ -6,7 +6,7 @@ import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart,
 import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
-import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse, addMonths } from 'date-fns';
+import { format, parse, addMonths, getYear, getMonth, set } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts';
@@ -85,8 +85,9 @@ export default function FinancyCanvas() {
   const [installmentCount, setInstallmentCount] = useState('');
 
   // State for report filtering
-  const [reportPeriod, setReportPeriod] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('all');
   const [reportSearchTerm, setReportSearchTerm] = useState('');
+  const [reportMonth, setReportMonth] = useState<number>(getMonth(new Date()));
+  const [reportYear, setReportYear] = useState<number>(getYear(new Date()));
   
   // State for installment report filtering
   const [installmentGroupFilter, setInstallmentGroupFilter] = useState<string>('all');
@@ -185,66 +186,62 @@ export default function FinancyCanvas() {
         return dateA.getTime() - dateB.getTime();
     });
   }, [transactions]);
+  
+  const filterTransactionsByPeriod = useCallback(<T extends Transaction>(items: T[], month: number, year: number, searchTerm: string) => {
+      let filtered = items;
 
-  const filterTransactionsByPeriod = useCallback(<T extends Transaction>(items: T[], period: typeof reportPeriod, searchTerm: string) => {
-    let filtered = items;
+      if (searchTerm) {
+          filtered = filtered.filter(d => d.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
+      }
 
-    if (searchTerm) {
-        filtered = filtered.filter(d => d.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
-    }
+      filtered = filtered.filter(d => {
+          const transactionDate = d.data?.toDate();
+          if (!transactionDate) return false;
+          return getMonth(transactionDate) === month && getYear(transactionDate) === year;
+      });
 
-    if (period !== 'all') {
-        filtered = filtered.filter(d => {
-            const transactionDate = d.data?.toDate();
-            if (!transactionDate) return false;
-            
-            switch (period) {
-                case 'day': return isToday(transactionDate);
-                case 'week': return isThisWeek(transactionDate, { weekStartsOn: 1 });
-                case 'month': return isThisMonth(transactionDate);
-                case 'year': return isThisYear(transactionDate);
-                default: return true;
-            }
-        });
-    }
-
-    return filtered;
+      return filtered;
   }, []);
   
   const filteredAllTransactions = useMemo(() => {
-    return filterTransactionsByPeriod(transactions, reportPeriod, reportSearchTerm);
-  }, [transactions, reportPeriod, reportSearchTerm, filterTransactionsByPeriod]);
+    return filterTransactionsByPeriod(transactions, reportMonth, reportYear, reportSearchTerm);
+  }, [transactions, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
 
   const filteredDespesas = useMemo(() => {
-    return filterTransactionsByPeriod(despesas, reportPeriod, reportSearchTerm);
-  }, [despesas, reportPeriod, reportSearchTerm, filterTransactionsByPeriod]);
-
-  const filteredTotalDespesas = useMemo(() => {
-    return filteredDespesas.reduce((acc, d) => acc + d.valor, 0);
-  }, [filteredDespesas]);
+    return filterTransactionsByPeriod(despesas, reportMonth, reportYear, reportSearchTerm);
+  }, [despesas, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
 
   const filteredReceitas = useMemo(() => {
-    return filterTransactionsByPeriod(receitas, reportPeriod, reportSearchTerm);
-  }, [receitas, reportPeriod, reportSearchTerm, filterTransactionsByPeriod]);
-
-  const filteredTotalReceitas = useMemo(() => {
-    return filteredReceitas.reduce((acc, d) => acc + d.valor, 0);
-  }, [filteredReceitas]);
+    return filterTransactionsByPeriod(receitas, reportMonth, reportYear, reportSearchTerm);
+  }, [receitas, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
 
   const filteredInstallments = useMemo(() => {
-      let filtered = filterTransactionsByPeriod(installments, reportPeriod, reportSearchTerm);
+    let filtered = filterTransactionsByPeriod(installments, reportMonth, reportYear, reportSearchTerm);
   
-      if (installmentGroupFilter !== 'all') {
-          filtered = filtered.filter(item => item.groupId === installmentGroupFilter);
-      }
-  
-      if (installmentNameFilter !== 'all') {
-          // The description of an installment is "Name (1/12)", so we check if it starts with the filter name.
-          filtered = filtered.filter(item => item.descricao.startsWith(installmentNameFilter));
-      }
-  
-      return filtered;
-  }, [installments, reportPeriod, reportSearchTerm, filterTransactionsByPeriod, installmentGroupFilter, installmentNameFilter]);
+    if (installmentGroupFilter !== 'all') {
+        filtered = filtered.filter(item => item.groupId === installmentGroupFilter);
+    }
+
+    if (installmentNameFilter !== 'all') {
+        // The description of an installment is "Name (1/12)", so we check if it starts with the filter name.
+        filtered = filtered.filter(item => item.descricao.startsWith(installmentNameFilter));
+    }
+
+    return filtered;
+  }, [installments, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod, installmentGroupFilter, installmentNameFilter]);
+
+  const uniqueYears = useMemo(() => {
+    if (!transactions) return [getYear(new Date())];
+    const years = new Set(transactions.map(t => getYear(t.data.toDate())));
+    return Array.from(years).sort((a,b) => b-a);
+  }, [transactions]);
+
+  const months = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => ({
+      value: i,
+      label: format(new Date(0, i), 'MMMM', { locale: ptBR }),
+    }));
+  }, []);
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -464,6 +461,8 @@ export default function FinancyCanvas() {
   }
 
   const openReport = (view: typeof reportView = 'summary') => {
+    setReportMonth(getMonth(new Date()));
+    setReportYear(getYear(new Date()));
     setReportView(view);
     setShowReportModal(true);
   };
@@ -474,7 +473,6 @@ export default function FinancyCanvas() {
     setShowReportModal(false);
     setTimeout(() => { 
         setReportView('summary'); 
-        setReportPeriod('all'); 
         setReportSearchTerm(''); 
         setInstallmentGroupFilter('all');
         setInstallmentNameFilter('all');
@@ -540,14 +538,28 @@ export default function FinancyCanvas() {
       return (
         <div className="py-4 pr-2">
             <div className="flex flex-col space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                    <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+                    </Select>
+                </div>
+                 <Button 
+                    variant="link" 
+                    size="sm" 
+                    className="text-primary self-start -mt-2" 
+                    onClick={() => { setReportMonth(getMonth(new Date())); setReportYear(getYear(new Date())); }}>
+                    Ir para o mês atual
+                </Button>
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input placeholder={`Filtrar por descrição...`} value={reportSearchTerm} onChange={(e) => setReportSearchTerm(e.target.value)} className="pl-10" />
                     {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
                 </div>
-                <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
-                    <TabsList className="grid w-full grid-cols-5"><TabsTrigger value="all">Total</TabsTrigger><TabsTrigger value="day">Dia</TabsTrigger><TabsTrigger value="week">Semana</TabsTrigger><TabsTrigger value="month">Mês</TabsTrigger><TabsTrigger value="year">Ano</TabsTrigger></TabsList>
-                </Tabs>
                  {title === 'transação' && (
                   <div className={`flex justify-between items-center p-3 bg-muted/50 rounded-lg`}>
                       <span className={`font-medium text-foreground`}>Balanço Filtrado</span>
@@ -611,15 +623,29 @@ export default function FinancyCanvas() {
                         Limpar Filtros
                     </Button>
                 )}
+                 <div className="grid grid-cols-2 gap-2">
+                    <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+                    </Select>
+                </div>
+                 <Button 
+                    variant="link" 
+                    size="sm" 
+                    className="text-primary self-start -mt-2" 
+                    onClick={() => { setReportMonth(getMonth(new Date())); setReportYear(getYear(new Date())); }}>
+                    Ir para o mês atual
+                </Button>
 
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input placeholder="Buscar na lista..." value={reportSearchTerm} onChange={(e) => setReportSearchTerm(e.target.value)} className="pl-10" />
                     {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
                 </div>
-                <Tabs defaultValue="all" onValueChange={(value) => setReportPeriod(value as any)}>
-                    <TabsList className="grid w-full grid-cols-5"><TabsTrigger value="all">Total</TabsTrigger><TabsTrigger value="day">Dia</TabsTrigger><TabsTrigger value="week">Semana</TabsTrigger><TabsTrigger value="month">Mês</TabsTrigger><TabsTrigger value="year">Ano</TabsTrigger></TabsList>
-                </Tabs>
                 <div className="max-h-[45vh] overflow-y-auto pr-2">
                     {filteredInstallments.length > 0 ? (
                         <ul className="space-y-3">
@@ -878,3 +904,5 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
