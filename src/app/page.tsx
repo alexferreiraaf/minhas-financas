@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut } from 'lucide-react';
 import type { Transaction, Group } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser } from '@/firebase';
-import { collection, query, doc } from 'firebase/firestore';
+import { collection, query, doc, where } from 'firebase/firestore';
 import { isToday, isThisMonth, isThisYear, isThisWeek, format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -47,7 +47,7 @@ export default function FinancyCanvas() {
   }, [firestore, user]);
 
   const { data: rawTransactions, isLoading: isLoadingTransactions, error: transactionsError } = useCollection<Transaction>(transactionsQuery);
-  const { data: groups, isLoading: isLoadingGroups } = useCollection<Group>(groupsQuery);
+  const { data: allGroups, isLoading: isLoadingGroups } = useCollection<Group>(groupsQuery);
 
 
   const [error, setError] = useState('');
@@ -70,9 +70,17 @@ export default function FinancyCanvas() {
   const [reportSearchTerm, setReportSearchTerm] = useState('');
 
   const groupMap = useMemo(() => {
-    if (!groups) return new Map();
-    return new Map(groups.map(g => [g.id, g.name]));
-  }, [groups]);
+    if (!allGroups) return new Map();
+    return new Map(allGroups.map(g => [g.id, g.name]));
+  }, [allGroups]);
+  
+  const { receitaGroups, despesaGroups } = useMemo(() => {
+    if (!allGroups) return { receitaGroups: [], despesaGroups: [] };
+    return {
+      receitaGroups: allGroups.filter(g => g.tipo === 'receita'),
+      despesaGroups: allGroups.filter(g => g.tipo === 'despesa'),
+    };
+  }, [allGroups]);
 
   // Client-side sorting because orderBy is not in the query
   const transactions = useMemo(() => {
@@ -226,7 +234,7 @@ export default function FinancyCanvas() {
       data: date,
     };
     
-    if (formType === 'despesa' && selectedGroupId) {
+    if (selectedGroupId && selectedGroupId !== 'none') {
         newTransaction.groupId = selectedGroupId;
     }
 
@@ -257,6 +265,7 @@ export default function FinancyCanvas() {
     const newGroup = {
         userId: user.uid,
         name: newGroupName.trim(),
+        tipo: formType,
     };
     const userGroupsCollection = collection(firestore, 'users', user.uid, 'groups');
     addDocumentNonBlocking(userGroupsCollection, newGroup);
@@ -406,6 +415,8 @@ export default function FinancyCanvas() {
       color: "hsl(var(--chart-1))",
     },
   };
+  
+  const groupsForForm = formType === 'receita' ? receitaGroups : despesaGroups;
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 md:p-8 font-body">
@@ -519,7 +530,7 @@ export default function FinancyCanvas() {
                           </div>
                           <div>
                             <p className="font-medium text-foreground leading-tight text-sm">{t.descricao}</p>
-                            {t.tipo === 'despesa' && t.groupId && groupMap.get(t.groupId) && (
+                            {t.groupId && groupMap.get(t.groupId) && (
                                 <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">
                                     {groupMap.get(t.groupId)}
                                 </span>
@@ -569,40 +580,40 @@ export default function FinancyCanvas() {
               </Alert>
             )}
             <div>
-              <Label htmlFor="description" className="text-left">Nome da entrada</Label>
+              <Label htmlFor="description" className="text-left">Nome da {formType === 'receita' ? 'Entrada' : 'Saída'}</Label>
               <Input
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Ex: Salário, Aluguel, etc."
+                placeholder={formType === 'receita' ? "Ex: Salário" : "Ex: Aluguel"}
                 required
                 className="mt-1"
               />
             </div>
-            {formType === 'despesa' && (
-              <div>
-                <Label htmlFor="group">Grupo</Label>
-                <div className="flex items-center space-x-2 mt-1">
-                  <Select onValueChange={setSelectedGroupId} value={selectedGroupId || ''}>
-                      <SelectTrigger id="group">
-                          <SelectValue placeholder="Selecione um grupo (opcional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                          <SelectItem value="none">Nenhum grupo</SelectItem>
-                          {groups?.map((group) => (
-                              <SelectItem key={group.id} value={group.id}>
-                                  {group.name}
-                              </SelectItem>
-                          ))}
-                      </SelectContent>
-                  </Select>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setShowGroupsModal(true)}>
-                      <Settings className="h-4 w-4" />
-                      <span className="sr-only">Gerenciar Grupos</span>
-                  </Button>
-                </div>
+            
+            <div>
+              <Label htmlFor="group">Grupo</Label>
+              <div className="flex items-center space-x-2 mt-1">
+                <Select onValueChange={(value) => setSelectedGroupId(value === 'none' ? null : value)} value={selectedGroupId || 'none'}>
+                    <SelectTrigger id="group">
+                        <SelectValue placeholder="Selecione um grupo (opcional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="none">Nenhum grupo</SelectItem>
+                        {groupsForForm?.map((group) => (
+                            <SelectItem key={group.id} value={group.id}>
+                                {group.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Button type="button" variant="outline" size="icon" onClick={() => setShowGroupsModal(true)}>
+                    <Settings className="h-4 w-4" />
+                    <span className="sr-only">Gerenciar Grupos</span>
+                </Button>
               </div>
-            )}
+            </div>
+
             <div>
               <Label htmlFor="value" className="text-left">Valor (R$)</Label>
               <Input
@@ -656,8 +667,8 @@ export default function FinancyCanvas() {
       <Dialog open={showGroupsModal} onOpenChange={setShowGroupsModal}>
           <DialogContent>
               <DialogHeader>
-                  <DialogTitle>Gerenciar Grupos de Despesa</DialogTitle>
-                  <DialogDescription>Adicione ou remova grupos para categorizar suas despesas.</DialogDescription>
+                  <DialogTitle>Gerenciar Grupos de {formType === 'receita' ? 'Receita' : 'Despesa'}</DialogTitle>
+                  <DialogDescription>Adicione ou remova grupos para categorizar suas transações.</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleAddGroup} className="flex items-center space-x-2 py-4">
                   <Input 
@@ -670,8 +681,8 @@ export default function FinancyCanvas() {
                   </Button>
               </form>
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
-                  {groups && groups.length > 0 ? (
-                      groups.map(group => (
+                  {groupsForForm && groupsForForm.length > 0 ? (
+                      groupsForForm.map(group => (
                           <div key={group.id} className="flex items-center justify-between bg-secondary p-2 rounded-md">
                               <span className="text-secondary-foreground">{group.name}</span>
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => handleDeleteGroup(group.id)}>
@@ -749,5 +760,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    

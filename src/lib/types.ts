@@ -15,4 +15,5 @@ export interface Group {
   id: string;
   userId: string;
   name: string;
+  tipo: 'receita' | 'despesa';
 }

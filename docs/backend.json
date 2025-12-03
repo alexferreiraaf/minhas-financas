@@ -34,7 +34,7 @@
         },
         "groupId": {
             "type": "string",
-            "description": "ID do grupo ao qual a despesa pertence (opcional)."
+            "description": "ID do grupo ao qual a transação pertence (opcional)."
         }
       },
       "required": ["userId", "descricao", "valor", "tipo", "data"]
@@ -55,7 +55,7 @@
     "Group": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "Group",
-        "description": "Representa um grupo de despesas criado pelo usuário.",
+        "description": "Representa um grupo de transações (receita ou despesa) criado pelo usuário.",
         "type": "object",
         "properties": {
             "id": {
@@ -68,10 +68,15 @@
             },
             "name": {
                 "type": "string",
-                "description": "Nome do grupo (ex: 'Mercado', 'Transporte')."
+                "description": "Nome do grupo (ex: 'Mercado', 'Salário')."
+            },
+            "tipo": {
+                "type": "string",
+                "description": "Tipo de grupo: 'receita' ou 'despesa'.",
+                "enum": ["receita", "despesa"]
             }
         },
-        "required": ["userId", "name"]
+        "required": ["userId", "name", "tipo"]
     }
   },
   "auth": {
@@ -100,7 +105,7 @@
         "definition": {
             "entityName": "Group",
             "schema": { "$ref": "#/backend/entities/Group" },
-            "description": "Armazena os grupos de despesas de um usuário."
+            "description": "Armazena os grupos de transações de um usuário."
         }
       }
     ]
