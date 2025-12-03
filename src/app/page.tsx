@@ -79,6 +79,7 @@ export default function FinancyCanvas() {
   const [newDescriptionName, setNewDescriptionName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [observation, setObservation] = useState('');
+  const [referenceMonth, setReferenceMonth] = useState<string | undefined>(undefined);
   
   // State for installments
   const [installmentTotalValue, setInstallmentTotalValue] = useState('');
@@ -286,6 +287,15 @@ export default function FinancyCanvas() {
       setIsSubmitting(false);
       return;
     }
+
+    let finalObservation = observation.trim();
+    if (formType === 'despesa' && referenceMonth && referenceMonth !== 'none') {
+        const monthLabel = months.find(m => String(m.value) === referenceMonth)?.label;
+        const year = getYear(date);
+        const refText = `Ref. ${monthLabel}/${year}`;
+        finalObservation = finalObservation ? `${refText} - ${finalObservation}` : refText;
+    }
+
     const newTransaction: Omit<Transaction, 'id' | 'data'> & { data: Date; groupId?: string | null } = {
       userId: user.uid,
       descricao: description.trim(),
@@ -293,12 +303,12 @@ export default function FinancyCanvas() {
       tipo: formType,
       data: date,
       status: 'pago',
-      observacao: observation.trim() || undefined,
+      observacao: finalObservation || undefined,
     };
     if (selectedGroupId && selectedGroupId !== 'none') newTransaction.groupId = selectedGroupId;
     const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
     addDocumentNonBlocking(userTransactionsCollection, newTransaction);
-    setDescription(''); setValue(''); setDate(new Date()); setSelectedGroupId(null); setObservation(''); setShowModal(false); setError(''); setIsSubmitting(false);
+    setDescription(''); setValue(''); setDate(new Date()); setSelectedGroupId(null); setObservation(''); setReferenceMonth(undefined); setShowModal(false); setError(''); setIsSubmitting(false);
   };
 
   const handleInstallmentSubmit = async (e: React.FormEvent) => {
@@ -755,7 +765,7 @@ export default function FinancyCanvas() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setDescription(''); setSelectedGroupId(null); setObservation(''); } setShowModal(isOpen); }}>
+      <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { setError(''); setDescription(''); setSelectedGroupId(null); setObservation(''); setReferenceMonth(undefined); } setShowModal(isOpen); }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader><DialogTitle className={`text-2xl font-bold ${modalColor}`}>{modalTitle}</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
@@ -783,10 +793,24 @@ export default function FinancyCanvas() {
                 <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal mt-1", !date && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{date ? format(date, "PPP", { locale: ptBR }) : <span>Escolha uma data</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={date} onSelect={setDate} initialFocus locale={ptBR} /></PopoverContent></Popover>
             </div>
              {formType === 'despesa' && (
-              <div>
-                <Label htmlFor="observation" className="text-left">Observação</Label>
-                <Textarea id="observation" value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="Adicione uma anotação (opcional)" className="mt-1" />
-              </div>
+              <>
+                <div>
+                  <Label htmlFor="reference-month">Mês de Referência (Opcional)</Label>
+                  <Select onValueChange={setReferenceMonth} value={referenceMonth}>
+                      <SelectTrigger id="reference-month" className="mt-1">
+                          <SelectValue placeholder="Selecione o mês da conta" />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="none">Nenhum</SelectItem>
+                          {months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}
+                      </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="observation" className="text-left">Observação</Label>
+                  <Textarea id="observation" value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="Adicione uma anotação (opcional)" className="mt-1" />
+                </div>
+              </>
             )}
             <DialogFooter className="pt-4">
               <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
