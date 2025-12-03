@@ -293,15 +293,16 @@ export default function FinancyCanvas() {
         finalObservation = finalObservation ? `${refText} - ${finalObservation}` : refText;
     }
 
-    const transactionData = {
-      userId: user.uid,
-      descricao: description.trim(),
-      valor: numericValue,
-      tipo: formType,
-      data: date,
-      status: 'pago',
-      observacao: finalObservation || undefined,
-      groupId: (selectedGroupId && selectedGroupId !== 'none') ? selectedGroupId : null,
+    const transactionData: Omit<Transaction, 'id' | 'data'> & { data: Date } = {
+        userId: user.uid,
+        descricao: description.trim(),
+        valor: numericValue,
+        tipo: formType,
+        data: date,
+        status: 'pago',
+        ...(finalObservation && { observacao: finalObservation }),
+        ...(selectedGroupId && selectedGroupId !== 'none' && { groupId: selectedGroupId }),
+        isParcela: false,
     };
     
     if (transactionToEdit) {
@@ -352,7 +353,7 @@ export default function FinancyCanvas() {
             parcelaAtual: i + 1,
             totalParcelas: count,
             status: 'pendente',
-            groupId: selectedGroupId && selectedGroupId !== 'none' ? selectedGroupId : undefined,
+            ...(selectedGroupId && selectedGroupId !== 'none' && { groupId: selectedGroupId }),
         };
         batch.set(transactionRef, newTransaction);
     }
@@ -826,7 +827,7 @@ export default function FinancyCanvas() {
                                                 <TableCell className="opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <div className="flex items-center justify-end">
                                                         {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>}
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
@@ -1005,7 +1006,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
-
-    
