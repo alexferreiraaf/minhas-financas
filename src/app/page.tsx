@@ -6,10 +6,9 @@ import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart,
 import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
-import { format, parse, addMonths, getYear, getMonth, set, isValid } from 'date-fns';
+import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -18,14 +17,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ThemeToggleButton } from '@/components/theme-toggle';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from '@/components/ui/textarea';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 
 export default function FinancyCanvas() {
@@ -156,37 +155,40 @@ export default function FinancyCanvas() {
       receitas: transactions.filter(t => t.tipo === 'receita')
     };
   }, [transactions]);
-  
-  const chartData = useMemo(() => {
+
+  const monthlyData = useMemo(() => {
     if (!transactions) return [];
 
-    const monthlyData: { [key: string]: { month: string; receita: number; despesa: number } } = {};
+    const grouped: { [key: string]: { monthLabel: string; transactions: Transaction[]; totalReceitas: number; totalDespesas: number; }} = {};
+    const paidTransactions = transactions.filter(t => t.status === 'pago');
 
-    transactions.filter(t => t.status === 'pago').forEach(t => {
-        const transactionDate = t.data?.toDate();
-        if (!transactionDate) return;
+    paidTransactions.forEach(t => {
+      const transactionDate = t.data?.toDate();
+      if (!transactionDate) return;
 
-        const monthKey = format(transactionDate, 'yyyy-MM');
-        if (!monthlyData[monthKey]) {
-            monthlyData[monthKey] = {
-                month: format(transactionDate, 'MMM/yy', { locale: ptBR }),
-                receita: 0,
-                despesa: 0,
-            };
-        }
-
-        if (t.tipo === 'receita') {
-            monthlyData[monthKey].receita += t.valor;
-        } else {
-            monthlyData[monthKey].despesa += t.valor;
-        }
+      const monthKey = format(transactionDate, 'yyyy-MM');
+      if (!grouped[monthKey]) {
+        grouped[monthKey] = {
+          monthLabel: format(startOfMonth(transactionDate), 'MMMM de yyyy', { locale: ptBR }),
+          transactions: [],
+          totalReceitas: 0,
+          totalDespesas: 0,
+        };
+      }
+      
+      grouped[monthKey].transactions.push(t);
+      if (t.tipo === 'receita') {
+        grouped[monthKey].totalReceitas += t.valor;
+      } else {
+        grouped[monthKey].totalDespesas += t.valor;
+      }
     });
 
-    return Object.values(monthlyData).sort((a, b) => {
-        const dateA = parse(a.month, 'MMM/yy', new Date());
-        const dateB = parse(b.month, 'MMM/yy', new Date());
-        return dateA.getTime() - dateB.getTime();
-    });
+    return Object.keys(grouped).sort().reverse().map(key => ({
+      key,
+      ...grouped[key],
+      saldo: grouped[key].totalReceitas - grouped[key].totalDespesas
+    }));
   }, [transactions]);
   
   const filterTransactionsByPeriod = useCallback(<T extends Transaction>(items: T[], month: number, year: number, searchTerm: string) => {
@@ -250,12 +252,6 @@ export default function FinancyCanvas() {
       style: 'currency',
       currency: 'BRL',
     }).format(amount);
-  }, []);
-
-  const formatCurrencySimple = useCallback((amount: number) => {
-    if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-    if (amount >= 1000) return `${(amount / 1000).toFixed(0)}k`;
-    return amount.toString();
   }, []);
   
   const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -752,7 +748,6 @@ export default function FinancyCanvas() {
     );
   };
 
-  const chartConfig = { receita: { label: "Receita", color: "hsl(var(--chart-2))" }, despesa: { label: "Despesa", color: "hsl(var(--chart-1))" } };
   const groupsForForm = formType === 'receita' ? receitaGroups : despesaGroups;
   const descriptionsForForm = formType === 'receita' ? receitaDescriptions : despesaDescriptions;
 
@@ -783,48 +778,66 @@ export default function FinancyCanvas() {
 
         <Card className="shadow-xl">
           <CardHeader className="flex flex-row items-center justify-between">
-            <div><CardTitle>Visão Geral Mensal</CardTitle><CardDescription>Receitas e despesas pagas ao longo dos meses.</CardDescription></div>
-            <Button variant="ghost" size="sm" onClick={() => openReport('summary')}><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Ver relatório completo</span></Button>
+            <div><CardTitle>Visão Geral Mensal</CardTitle><CardDescription>Lançamentos pagos, agrupados por mês.</CardDescription></div>
+            <Button variant="ghost" size="sm" onClick={() => openReport('all')}><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Ver relatório completo</span></Button>
           </CardHeader>
           <CardContent className="space-y-6">
-            {transactions.length === 0 ? <div className="py-10 text-center text-muted-foreground"><PieChart className="w-10 h-10 mx-auto mb-3" /><p>Nenhum dado para exibir no gráfico.</p><p className='text-sm mt-1'>Adicione transações para começar a visualizar.</p></div>
-            : <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={chartData} margin={{ top: 20, right: 20, left: -10, bottom: 5 }}>
-                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false}/>
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrencySimple(value as number)} />
-                    <Tooltip cursor={{ fill: 'hsl(var(--accent))', radius: 'var(--radius)' }} content={<ChartTooltipContent formatter={(value, name) => <div><p className="font-medium">{name === 'receita' ? 'Receitas' : 'Despesas'}</p><p>{formatCurrency(value as number)}</p></div>} />}/>
-                    <Legend />
-                    <Bar dataKey="receita" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} name="Receitas"/>
-                    <Bar dataKey="despesa" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} name="Despesas"/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartContainer>}
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-semibold">Transações Pagas Recentes</h3>
-                   <Button variant="link" size="sm" className="text-primary" onClick={() => openReport('all')}>Ver Todas</Button>
-              </div>
-              {recentTransactions.length > 0 ? <ul className="space-y-3">{recentTransactions.map((t) => (
-                  <li key={t.id} className={`group flex justify-between items-center p-3 rounded-lg border-l-4 transition-all duration-200 ${t.tipo === 'receita' ? 'border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 dark:border-emerald-700' : 'border-red-400 bg-red-50/50 hover:bg-red-50 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:border-red-700'}`}>
-                    <div className="flex items-center min-w-0">
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mr-3 ${t.tipo === 'receita' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-800/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-800/30 dark:text-red-400'}`}>{t.tipo === 'receita' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-foreground leading-tight text-sm truncate">{t.descricao}</p>
-                        {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(t.groupId)}</span>}
-                        <p className="text-xs text-muted-foreground mt-0.5">{t.data && t.data.toDate().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' })}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center flex-shrink-0 ml-4">
-                      <p className={`font-semibold text-sm ${t.tipo === 'receita' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}</p>
-                      {!t.isParcela && (
-                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>
-                      )}
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  </li>))}</ul>
-              : <div className="py-6 text-center text-muted-foreground"><p>Nenhuma transação paga registrada ainda.</p></div>}
-            </div>
+            {monthlyData.length === 0 ? (
+                <div className="py-10 text-center text-muted-foreground">
+                    <PieChart className="w-10 h-10 mx-auto mb-3" />
+                    <p>Nenhum dado para exibir.</p>
+                    <p className='text-sm mt-1'>Adicione transações para começar a visualizar.</p>
+                </div>
+            ) : (
+                <Accordion type="single" collapsible defaultValue={monthlyData[0]?.key}>
+                    {monthlyData.map(month => (
+                        <AccordionItem value={month.key} key={month.key}>
+                            <AccordionTrigger>
+                                <div className="flex justify-between items-center w-full pr-4">
+                                    <span className="font-semibold text-lg capitalize">{month.monthLabel}</span>
+                                    <div className="flex items-center space-x-4 text-sm">
+                                        <span className="text-emerald-500">{formatCurrency(month.totalReceitas)}</span>
+                                        <span className="text-red-500">-{formatCurrency(month.totalDespesas)}</span>
+                                        <span className={`font-bold ${month.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(month.saldo)}</span>
+                                    </div>
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Descrição</TableHead>
+                                            <TableHead className="text-right">Data</TableHead>
+                                            <TableHead className="text-right">Valor</TableHead>
+                                            <TableHead className="w-[80px]"></TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {month.transactions.map(t => (
+                                            <TableRow key={t.id} className="group">
+                                                <TableCell>
+                                                    <p className="font-medium truncate max-w-[200px] sm:max-w-xs">{t.descricao}</p>
+                                                    {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(t.groupId)}</span>}
+                                                </TableCell>
+                                                <TableCell className="text-right text-muted-foreground text-xs">{format(t.data.toDate(), 'dd/MM/yy')}</TableCell>
+                                                <TableCell className={`text-right font-medium ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                    {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
+                                                </TableCell>
+                                                <TableCell className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <div className="flex items-center justify-end">
+                                                        {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>}
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </AccordionContent>
+                        </AccordionItem>
+                    ))}
+                </Accordion>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -992,5 +1005,7 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
 
     
