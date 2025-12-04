@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX, FileText } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX, FileText, Eye } from 'lucide-react';
 import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Textarea } from '@/components/ui/textarea';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Progress } from '@/components/ui/progress';
 
 
 export default function FinancyCanvas() {
@@ -63,6 +64,8 @@ export default function FinancyCanvas() {
 
   const [showModal, setShowModal] = useState(false);
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
+  const [showInstallmentDetailModal, setShowInstallmentDetailModal] = useState(false);
+  const [installmentToView, setInstallmentToView] = useState<Transaction | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showGroupsModal, setShowGroupsModal] = useState(false);
   const [showDescriptionsModal, setShowDescriptionsModal] = useState(false);
@@ -127,7 +130,24 @@ export default function FinancyCanvas() {
 
   const installments = useMemo(() => {
     if (!transactions) return [];
-    return transactions.filter(t => t.isParcela).sort((a, b) => {
+    // Group by parcelaId and then sort within group
+    const grouped = transactions.filter(t => t.isParcela).reduce((acc, t) => {
+        if (t.parcelaId) {
+            if (!acc[t.parcelaId]) {
+                acc[t.parcelaId] = [];
+            }
+            acc[t.parcelaId].push(t);
+        }
+        return acc;
+    }, {} as Record<string, Transaction[]>);
+
+    // Sort each group by parcelaAtual
+    for (const key in grouped) {
+        grouped[key].sort((a, b) => (a.parcelaAtual || 0) - (b.parcelaAtual || 0));
+    }
+    
+    // Flatten and sort groups by the date of their first installment
+    return Object.values(grouped).flat().sort((a, b) => {
         const dateA = a.data?.toDate() || new Date(0);
         const dateB = b.data?.toDate() || new Date(0);
         return dateA.getTime() - dateB.getTime();
@@ -219,20 +239,51 @@ export default function FinancyCanvas() {
     return filterTransactionsByPeriod(receitas, reportMonth, reportYear, reportSearchTerm);
   }, [receitas, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
 
-  const filteredInstallments = useMemo(() => {
-    let filtered = filterTransactionsByPeriod(installments, reportMonth, reportYear, reportSearchTerm);
+  const uniqueInstallmentPurchases = useMemo(() => {
+    const purchaseMap = new Map<string, Transaction>();
+    installments.forEach(item => {
+        if (item.parcelaId && !purchaseMap.has(item.parcelaId)) {
+            purchaseMap.set(item.parcelaId, item);
+        }
+    });
+    return Array.from(purchaseMap.values());
+  }, [installments]);
+
+  const filteredInstallmentPurchases = useMemo(() => {
+    let filtered = uniqueInstallmentPurchases;
   
     if (installmentGroupFilter !== 'all') {
         filtered = filtered.filter(item => item.groupId === installmentGroupFilter);
     }
 
     if (installmentNameFilter !== 'all') {
-        // The description of an installment is "Name (1/12)", so we check if it starts with the filter name.
         filtered = filtered.filter(item => item.descricao.startsWith(installmentNameFilter));
     }
 
+    if (reportSearchTerm) {
+        filtered = filtered.filter(item => item.descricao.toLowerCase().includes(reportSearchTerm.toLowerCase()));
+    }
+    
+    // We filter by date by checking if *any* installment of that purchase falls within the month/year
+    filtered = filtered.filter(purchase => {
+      const allInstallmentsOfPurchase = installments.filter(i => i.parcelaId === purchase.parcelaId);
+      return allInstallmentsOfPurchase.some(inst => {
+          const transactionDate = inst.data?.toDate();
+          if (!transactionDate) return false;
+          return getMonth(transactionDate) === reportMonth && getYear(transactionDate) === year;
+      });
+    });
+
     return filtered;
-  }, [installments, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod, installmentGroupFilter, installmentNameFilter]);
+  }, [uniqueInstallmentPurchases, installments, reportMonth, reportYear, reportSearchTerm, installmentGroupFilter, installmentNameFilter]);
+  
+  const allInstallmentsForSelectedPurchase = useMemo(() => {
+    if (!installmentToView?.parcelaId) return [];
+    return transactions.filter(t => t.parcelaId === installmentToView.parcelaId)
+      .sort((a,b) => (a.parcelaAtual || 0) - (b.parcelaAtual || 0));
+  }, [installmentToView, transactions]);
+
+
 
   const uniqueYears = useMemo(() => {
     if (!transactions) return [getYear(new Date())];
@@ -293,16 +344,16 @@ export default function FinancyCanvas() {
         finalObservation = finalObservation ? `${refText} - ${finalObservation}` : refText;
     }
 
-    const transactionData: Omit<Transaction, 'id' | 'data'> & { data: Date } = {
+    const transactionData = {
         userId: user.uid,
         descricao: description.trim(),
         valor: numericValue,
         tipo: formType,
         data: date,
         status: 'pago',
-        ...(finalObservation && { observacao: finalObservation }),
-        ...(selectedGroupId && selectedGroupId !== 'none' && { groupId: selectedGroupId }),
         isParcela: false,
+        ...(finalObservation ? { observacao: finalObservation } : {}),
+        ...(selectedGroupId && selectedGroupId !== 'none' ? { groupId: selectedGroupId } : {}),
     };
     
     if (transactionToEdit) {
@@ -342,7 +393,7 @@ export default function FinancyCanvas() {
         const transactionDate = addMonths(firstDate, i);
         const transactionRef = doc(collection(firestore, 'users', user.uid, 'transactions'));
         
-        const newTransaction: Omit<Transaction, 'id' | 'data'> & { data: Date } = {
+        const newTransaction = {
             userId: user.uid,
             descricao: `${description.trim()} (${i + 1}/${count})`,
             valor: installmentValue,
@@ -528,6 +579,11 @@ export default function FinancyCanvas() {
     setReportView(view);
     setShowReportModal(true);
   };
+
+  const openInstallmentDetails = (installment: Transaction) => {
+    setInstallmentToView(installment);
+    setShowInstallmentDetailModal(true);
+  }
 
   const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups || isLoadingDescriptions || !user;
   
@@ -715,25 +771,18 @@ export default function FinancyCanvas() {
                     {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
                 </div>
                 <div className="max-h-[45vh] overflow-y-auto pr-2">
-                    {filteredInstallments.length > 0 ? (
+                    {filteredInstallmentPurchases.length > 0 ? (
                         <ul className="space-y-3">
-                            {filteredInstallments.map(item => (
-                                <li key={item.id} className={`group flex justify-between items-center p-3 bg-card border-l-4 rounded-lg ${item.status === 'pago' ? 'border-emerald-400' : 'border-amber-400'}`}>
+                            {filteredInstallmentPurchases.map(item => (
+                                <li key={item.id} className={`group flex justify-between items-center p-3 bg-card border-l-4 rounded-lg border-sky-400`}>
                                     <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-sm text-foreground truncate">{item.descricao}</p>
-                                        {item.groupId && groupMap.get(item.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(item.groupId)}</span>)}
-                                        <p className="text-xs text-muted-foreground mt-1">{format(item.data.toDate(), 'dd/MM/yyyy')} - {formatCurrency(item.valor)}</p>
+                                        <p className="font-medium text-sm text-foreground truncate">{item.descricao.split(' (')[0]}</p>
+                                        <p className="text-xs text-muted-foreground mt-1">{item.totalParcelas} parcelas de {formatCurrency(item.valor)}</p>
                                     </div>
                                     <div className="flex items-center ml-2">
-                                        {item.status === 'pendente' ? (
-                                            <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-600 border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => handleMarkAsPaid(item.id)}>
-                                                <CheckSquare className="mr-2 h-4 w-4"/> Pagar
-                                            </Button>
-                                        ) : (
-                                            <div className="flex items-center text-xs font-semibold text-emerald-600 px-2">
-                                                <CheckSquare className="mr-1.5 h-4 w-4"/> Pago
-                                            </div>
-                                        )}
+                                        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openInstallmentDetails(item)}>
+                                            <Eye className="mr-2 h-4 w-4"/> Ver Detalhes
+                                        </Button>
                                         <Button size="icon" variant="ghost" className="h-8 w-8 ml-1 text-muted-foreground hover:text-destructive" onClick={() => setInstallmentToDelete(item)}>
                                             <Trash2 className="h-4 w-4"/>
                                             <span className="sr-only">Excluir Parcelamento</span>
@@ -742,12 +791,73 @@ export default function FinancyCanvas() {
                                 </li>
                             ))}
                         </ul>
-                    ) : <div className="text-center py-10 text-muted-foreground"><p>Nenhuma parcela encontrada para os filtros selecionados.</p></div>}
+                    ) : <div className="text-center py-10 text-muted-foreground"><p>Nenhuma compra parcelada encontrada para os filtros selecionados.</p></div>}
                 </div>
             </div>
         </div>
     );
   };
+  
+  const renderInstallmentDetailModal = () => {
+    if (!installmentToView) return null;
+    const installments = allInstallmentsForSelectedPurchase;
+    if (installments.length === 0) return null;
+    
+    const firstInstallment = installments[0];
+    const totalValue = firstInstallment.valor * (firstInstallment.totalParcelas || 1);
+    const paidCount = installments.filter(i => i.status === 'pago').length;
+    const progress = (paidCount / (firstInstallment.totalParcelas || 1)) * 100;
+
+    return (
+      <Dialog open={showInstallmentDetailModal} onOpenChange={(isOpen) => { if (!isOpen) setInstallmentToView(null); setShowInstallmentDetailModal(isOpen); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sky-600">{firstInstallment.descricao.split(' (')[0]}</DialogTitle>
+            <DialogDescription>
+              {firstInstallment.totalParcelas} parcelas de {formatCurrency(firstInstallment.valor)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <div className="flex justify-between items-center mb-1 text-sm">
+                <span className="font-medium text-muted-foreground">Progresso</span>
+                <span className="font-semibold text-foreground">{paidCount} de {firstInstallment.totalParcelas} pagas</span>
+              </div>
+              <Progress value={progress} className="h-2" />
+              <div className="flex justify-between items-center mt-2 text-sm">
+                <span className="font-medium text-muted-foreground">Total Pago: {formatCurrency(paidCount * firstInstallment.valor)}</span>
+                <span className="font-bold text-foreground">Total: {formatCurrency(totalValue)}</span>
+              </div>
+            </div>
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+              {installments.map(item => (
+                <div key={item.id} className={`group flex justify-between items-center p-2.5 bg-card border-l-4 rounded-lg ${item.status === 'pago' ? 'border-emerald-400' : 'border-amber-400'}`}>
+                    <div className="flex items-center">
+                        <div className="mr-3">{item.status === 'pago' ? <CheckSquare className="h-5 w-5 text-emerald-500" /> : <Clock className="h-5 w-5 text-amber-500" />}</div>
+                        <div>
+                            <p className="font-medium text-sm text-foreground">Parcela {item.parcelaAtual}</p>
+                            <p className="text-xs text-muted-foreground">{format(item.data.toDate(), 'dd/MM/yyyy')}</p>
+                        </div>
+                    </div>
+                    {item.status === 'pendente' ? (
+                         <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-600 border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => handleMarkAsPaid(item.id)}>
+                             <CheckSquare className="mr-1 h-4 w-4"/> Pagar
+                         </Button>
+                    ) : (
+                        <p className="font-semibold text-sm text-emerald-600">{formatCurrency(item.valor)}</p>
+                    )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInstallmentDetailModal(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
 
   const groupsForForm = formType === 'receita' ? receitaGroups : despesaGroups;
   const descriptionsForForm = formType === 'receita' ? receitaDescriptions : despesaDescriptions;
@@ -851,14 +961,21 @@ export default function FinancyCanvas() {
             <div>
               <Label htmlFor="description" className="text-left">Nome da {formType === 'receita' ? 'Entrada' : 'Saída'}</Label>
               <div className="flex items-center space-x-2 mt-1">
-                <Select onValueChange={setDescription} value={description}><SelectTrigger id="description"><SelectValue placeholder="Selecione um nome" /></SelectTrigger><SelectContent>{descriptionsForForm?.map((desc) => <SelectItem key={desc.id} value={desc.name}>{desc.name}</SelectItem>)}</SelectContent></Select>
+                <Select onValueChange={setDescription} value={description}>
+                    <SelectTrigger id="description"><SelectValue placeholder="Selecione um nome" /></SelectTrigger>
+                    <SelectContent>
+                        {descriptionsForForm.map((desc) => (
+                            <SelectItem key={desc.id} value={desc.name}>{desc.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
                 <Button type="button" variant="outline" size="icon" onClick={() => setShowDescriptionsModal(true)}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Nomes</span></Button>
               </div>
             </div>
             <div>
               <Label htmlFor="group">Grupo</Label>
               <div className="flex items-center space-x-2 mt-1">
-                <Select onValueChange={(value) => setSelectedGroupId(value === 'none' ? null : value)} value={selectedGroupId || 'none'}><SelectTrigger id="group"><SelectValue placeholder="Selecione um grupo (opcional)" /></SelectTrigger><SelectContent><SelectItem value="none">Nenhum grupo</SelectItem>{groupsForForm?.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select>
+                <Select onValueChange={(value) => setSelectedGroupId(value === 'none' ? null : value)} value={selectedGroupId || 'none'}><SelectTrigger id="group"><SelectValue placeholder="Selecione um grupo (opcional)" /></SelectTrigger><SelectContent><SelectItem value="none">Nenhum grupo</SelectItem>{groupsForForm.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select>
                 <Button type="button" variant="outline" size="icon" onClick={() => setShowGroupsModal(true)}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Grupos</span></Button>
               </div>
             </div>
@@ -906,14 +1023,14 @@ export default function FinancyCanvas() {
             <div>
               <Label htmlFor="installment-description">Nome da Compra</Label>
               <div className="flex items-center space-x-2 mt-1">
-                <Select onValueChange={setDescription} value={description}><SelectTrigger id="installment-description"><SelectValue placeholder="Selecione ou digite um nome" /></SelectTrigger><SelectContent>{despesaDescriptions?.map((desc) => <SelectItem key={desc.id} value={desc.name}>{desc.name}</SelectItem>)}</SelectContent></Select>
+                <Select onValueChange={setDescription} value={description}><SelectTrigger id="installment-description"><SelectValue placeholder="Selecione ou digite um nome" /></SelectTrigger><SelectContent>{despesaDescriptions.map((desc) => <SelectItem key={desc.id} value={desc.name}>{desc.name}</SelectItem>)}</SelectContent></Select>
                 <Button type="button" variant="outline" size="icon" onClick={() => { setFormType('despesa'); setShowDescriptionsModal(true);}}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Nomes</span></Button>
               </div>
             </div>
             <div>
               <Label htmlFor="installment-group">Grupo</Label>
               <div className="flex items-center space-x-2 mt-1">
-                <Select onValueChange={(value) => setSelectedGroupId(value === 'none' ? null : value)} value={selectedGroupId || 'none'}><SelectTrigger id="installment-group"><SelectValue placeholder="Selecione um grupo (opcional)" /></SelectTrigger><SelectContent><SelectItem value="none">Nenhum grupo</SelectItem>{despesaGroups?.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select>
+                <Select onValueChange={(value) => setSelectedGroupId(value === 'none' ? null : value)} value={selectedGroupId || 'none'}><SelectTrigger id="installment-group"><SelectValue placeholder="Selecione um grupo (opcional)" /></SelectTrigger><SelectContent><SelectItem value="none">Nenhum grupo</SelectItem>{despesaGroups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select>
                 <Button type="button" variant="outline" size="icon" onClick={() => { setFormType('despesa'); setShowGroupsModal(true);}}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Grupos</span></Button>
               </div>
             </div>
@@ -944,7 +1061,7 @@ export default function FinancyCanvas() {
               <DialogHeader><DialogTitle>Gerenciar Nomes de {formType === 'receita' ? 'Entrada' : 'Saída'}</DialogTitle><DialogDescription>Adicione ou remova nomes para seus lançamentos.</DialogDescription></DialogHeader>
               <form onSubmit={handleAddDescription} className="flex items-center space-x-2 py-4"><Input value={newDescriptionName} onChange={(e) => setNewDescriptionName(e.target.value)} placeholder="Nome do novo lançamento"/><Button type="submit" size="icon"><PlusCircle className="h-4 w-4" /></Button></form>
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
-                  {descriptionsForForm && descriptionsForForm.length > 0 ? (descriptionsForForm.map(desc => (<div key={desc.id} className="flex items-center justify-between bg-secondary p-2 rounded-md"><span className="text-secondary-foreground">{desc.name}</span><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => handleDeleteDescription(desc.id)}><Trash2 className="h-4 w-4"/></Button></div>))) : <p className="text-center text-muted-foreground py-4">Nenhum nome cadastrado.</p>}
+                  {descriptionsForForm.length > 0 ? (descriptionsForForm.map(desc => (<div key={desc.id} className="flex items-center justify-between bg-secondary p-2 rounded-md"><span className="text-secondary-foreground">{desc.name}</span><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => handleDeleteDescription(desc.id)}><Trash2 className="h-4 w-4"/></Button></div>))) : <p className="text-center text-muted-foreground py-4">Nenhum nome cadastrado.</p>}
               </div>
               <DialogFooter><Button variant="outline" onClick={() => setShowDescriptionsModal(false)}>Fechar</Button></DialogFooter>
           </DialogContent>
@@ -955,7 +1072,7 @@ export default function FinancyCanvas() {
               <DialogHeader><DialogTitle>Gerenciar Grupos de {formType === 'receita' ? 'Receita' : 'Despesa'}</DialogTitle><DialogDescription>Adicione ou remova grupos para categorizar suas transações.</DialogDescription></DialogHeader>
               <form onSubmit={handleAddGroup} className="flex items-center space-x-2 py-4"><Input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="Nome do novo grupo"/><Button type="submit" size="icon"><PlusCircle className="h-4 w-4" /></Button></form>
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
-                  {groupsForForm && groupsForForm.length > 0 ? (groupsForForm.map(group => (<div key={group.id} className="flex items-center justify-between bg-secondary p-2 rounded-md"><span className="text-secondary-foreground">{group.name}</span><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => handleDeleteGroup(group.id)}><Trash2 className="h-4 w-4"/></Button></div>))) : <p className="text-center text-muted-foreground py-4">Nenhum grupo cadastrado.</p>}
+                  {groupsForForm.length > 0 ? (groupsForForm.map(group => (<div key={group.id} className="flex items-center justify-between bg-secondary p-2 rounded-md"><span className="text-secondary-foreground">{group.name}</span><Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => handleDeleteGroup(group.id)}><Trash2 className="h-4 w-4"/></Button></div>))) : <p className="text-center text-muted-foreground py-4">Nenhum grupo cadastrado.</p>}
               </div>
               <DialogFooter><Button variant="outline" onClick={() => setShowGroupsModal(false)}>Fechar</Button></DialogFooter>
           </DialogContent>
@@ -968,7 +1085,7 @@ export default function FinancyCanvas() {
                     <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" onClick={() => setReportView('all')}><span className="font-medium text-blue-700 dark:text-blue-300">Todos os Lançamentos</span><span className="font-bold text-lg text-blue-600 dark:text-blue-400">{transactions.length}</span></div>
                     <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors" onClick={() => setReportView('receitas')}><span className="font-medium text-emerald-700 dark:text-emerald-300">Total de Receitas</span><span className="font-bold text-lg text-emerald-600 dark:text-emerald-400">{formatCurrency(totalReceitas)}</span></div>
                     <div className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/30 rounded-lg cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors" onClick={() => setReportView('despesas')}><span className="font-medium text-red-700 dark:text-red-300">Total de Despesas</span><span className="font-bold text-lg text-red-600 dark:text-red-400">{formatCurrency(totalDespesas)}</span></div>
-                    <div className="flex justify-between items-center p-3 bg-sky-50 dark:bg-sky-900/30 rounded-lg cursor-pointer hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors" onClick={() => setReportView('parcelas')}><span className="font-medium text-sky-700 dark:text-sky-300">Meus Parcelados</span><span className="font-bold text-lg text-sky-600 dark:text-sky-400">{installments.filter(i => i.status === 'pendente').length} pendentes</span></div>
+                    <div className="flex justify-between items-center p-3 bg-sky-50 dark:bg-sky-900/30 rounded-lg cursor-pointer hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors" onClick={() => setReportView('parcelas')}><span className="font-medium text-sky-700 dark:text-sky-300">Meus Parcelados</span><span className="font-bold text-lg text-sky-600 dark:text-sky-400">{uniqueInstallmentPurchases.length} compras</span></div>
                     <div className="flex justify-between items-center p-4 bg-card border-t-2 mt-4 rounded-lg"><span className="font-bold text-foreground">Saldo Final</span><span className={`font-extrabold text-xl ${balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(balance)}</span></div>
             </div>}
             {reportView === 'all' && renderGenericReport(filteredAllTransactions, 'transação')}
@@ -978,6 +1095,8 @@ export default function FinancyCanvas() {
             <DialogFooter>{reportView !== 'summary' ? <Button onClick={() => setReportView('summary')} variant="outline">Voltar ao Resumo</Button> : <Button onClick={handleCloseReportModal} variant="outline">Fechar</Button>}</DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {renderInstallmentDetailModal()}
       
       <AlertDialog open={!!transactionToDelete} onOpenChange={(isOpen) => !isOpen && setTransactionToDelete(null)}>
         <AlertDialogContent>
@@ -1006,3 +1125,7 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
+
+    
