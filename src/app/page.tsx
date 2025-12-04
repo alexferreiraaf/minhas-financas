@@ -270,7 +270,7 @@ export default function FinancyCanvas() {
       return allInstallmentsOfPurchase.some(inst => {
           const transactionDate = inst.data?.toDate();
           if (!transactionDate) return false;
-          return getMonth(transactionDate) === reportMonth && getYear(transactionDate) === year;
+          return getMonth(transactionDate) === reportMonth && getYear(transactionDate) === reportYear;
       });
     });
 
@@ -344,7 +344,7 @@ export default function FinancyCanvas() {
         finalObservation = finalObservation ? `${refText} - ${finalObservation}` : refText;
     }
 
-    const transactionData = {
+    const transactionData: Partial<Transaction> = {
         userId: user.uid,
         descricao: description.trim(),
         valor: numericValue,
@@ -352,9 +352,15 @@ export default function FinancyCanvas() {
         data: date,
         status: 'pago',
         isParcela: false,
-        ...(finalObservation ? { observacao: finalObservation } : {}),
-        ...(selectedGroupId && selectedGroupId !== 'none' ? { groupId: selectedGroupId } : {}),
     };
+
+    if (finalObservation) {
+        transactionData.observacao = finalObservation;
+    }
+    if (selectedGroupId && selectedGroupId !== 'none') {
+        transactionData.groupId = selectedGroupId;
+    }
+
     
     if (transactionToEdit) {
       const transactionRef = doc(firestore, 'users', user.uid, 'transactions', transactionToEdit.id);
@@ -393,7 +399,7 @@ export default function FinancyCanvas() {
         const transactionDate = addMonths(firstDate, i);
         const transactionRef = doc(collection(firestore, 'users', user.uid, 'transactions'));
         
-        const newTransaction = {
+        const newTransaction: Partial<Transaction> = {
             userId: user.uid,
             descricao: `${description.trim()} (${i + 1}/${count})`,
             valor: installmentValue,
@@ -404,8 +410,11 @@ export default function FinancyCanvas() {
             parcelaAtual: i + 1,
             totalParcelas: count,
             status: 'pendente',
-            ...(selectedGroupId && selectedGroupId !== 'none' && { groupId: selectedGroupId }),
         };
+        if (selectedGroupId && selectedGroupId !== 'none') {
+            newTransaction.groupId = selectedGroupId;
+        }
+
         batch.set(transactionRef, newTransaction);
     }
 
@@ -1125,7 +1134,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
-
-    
