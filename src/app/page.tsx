@@ -277,6 +277,18 @@ export default function FinancyCanvas() {
     return filtered;
   }, [uniqueInstallmentPurchases, installments, reportMonth, reportYear, reportSearchTerm, installmentGroupFilter, installmentNameFilter]);
   
+  const monthlyInstallmentsTotal = useMemo(() => {
+    if (!installments) return 0;
+    
+    const monthlyInstallments = installments.filter(inst => {
+        const transactionDate = inst.data?.toDate();
+        if (!transactionDate) return false;
+        return getMonth(transactionDate) === reportMonth && getYear(transactionDate) === reportYear;
+    });
+
+    return monthlyInstallments.reduce((acc, inst) => acc + inst.valor, 0);
+  }, [installments, reportMonth, reportYear]);
+
   const allInstallmentsForSelectedPurchase = useMemo(() => {
     if (!installmentToView?.parcelaId) return [];
     return transactions.filter(t => t.parcelaId === installmentToView.parcelaId)
@@ -779,6 +791,10 @@ export default function FinancyCanvas() {
                     <Input placeholder="Buscar na lista..." value={reportSearchTerm} onChange={(e) => setReportSearchTerm(e.target.value)} className="pl-10" />
                     {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
                 </div>
+                 <div className={`flex justify-between items-center p-3 bg-muted/50 rounded-lg`}>
+                      <span className={`font-medium text-foreground`}>Total de Parcelas do Mês</span>
+                      <span className={`font-bold text-lg text-sky-600`}>{formatCurrency(monthlyInstallmentsTotal)}</span>
+                  </div>
                 <div className="max-h-[45vh] overflow-y-auto pr-2">
                     {filteredInstallmentPurchases.length > 0 ? (
                         <ul className="space-y-3">
@@ -1134,3 +1150,5 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
