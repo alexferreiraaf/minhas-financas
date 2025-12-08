@@ -768,12 +768,21 @@ export default function FinancyCanvas() {
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm text-foreground truncate">{d.descricao}</p>
                                         {d.groupId && groupMap.get(d.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(d.groupId)}</span>)}
-                                        {d.observacao && <p className="text-xs text-muted-foreground italic mt-1">Obs: {d.observacao}</p>}
                                         <p className="text-xs text-muted-foreground mt-1">{d.data?.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center flex-shrink-0">
                                   <p className={`font-semibold text-${color}-600 dark:text-${color}-400 whitespace-nowrap ml-4`}>{isIncome ? '+' : '-'} {formatCurrency(d.valor)}</p>
+                                    {d.observacao && (
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-50 hover:opacity-100 group-hover:opacity-100 transition-opacity">
+                                                    <Eye className="h-4 w-4" />
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="text-sm w-auto max-w-xs">{d.observacao}</PopoverContent>
+                                        </Popover>
+                                    )}
                                   {!d.isParcela && (
                                     <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(d)}><Edit className="h-4 w-4" /></Button>
                                   )}
@@ -1201,3 +1210,5 @@ export default function FinancyCanvas() {
     </div>
   );
 }
+
+    
