@@ -96,6 +96,10 @@ export default function FinancyCanvas() {
   // State for installment report filtering
   const [installmentGroupFilter, setInstallmentGroupFilter] = useState<string>('all');
   const [installmentNameFilter, setInstallmentNameFilter] = useState<string>('all');
+  
+  // State for expense report filtering
+  const [expenseGroupFilter, setExpenseGroupFilter] = useState<string>('all');
+  const [expenseNameFilter, setExpenseNameFilter] = useState<string>('all');
 
   const groupMap = useMemo(() => {
     if (!allGroups) return new Map();
@@ -232,8 +236,19 @@ export default function FinancyCanvas() {
   }, [transactions, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
 
   const filteredDespesas = useMemo(() => {
-    return filterTransactionsByPeriod(despesas, reportMonth, reportYear, reportSearchTerm);
-  }, [despesas, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
+    let filtered = filterTransactionsByPeriod(despesas, reportMonth, reportYear, reportSearchTerm);
+
+    if (expenseGroupFilter !== 'all') {
+      filtered = filtered.filter(item => (item.groupId || 'none') === expenseGroupFilter);
+    }
+  
+    if (expenseNameFilter !== 'all') {
+      // For installments, we match the root name
+      filtered = filtered.filter(item => item.descricao.split(' (')[0] === expenseNameFilter);
+    }
+
+    return filtered;
+  }, [despesas, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod, expenseGroupFilter, expenseNameFilter]);
 
   const filteredReceitas = useMemo(() => {
     return filterTransactionsByPeriod(receitas, reportMonth, reportYear, reportSearchTerm);
@@ -356,7 +371,7 @@ export default function FinancyCanvas() {
         finalObservation = finalObservation ? `${refText} - ${finalObservation}` : refText;
     }
 
-    const transactionData: Partial<Transaction> = {
+    const transactionData: Partial<Omit<Transaction, 'id'>> = {
         userId: user.uid,
         descricao: description.trim(),
         valor: numericValue,
@@ -411,7 +426,7 @@ export default function FinancyCanvas() {
         const transactionDate = addMonths(firstDate, i);
         const transactionRef = doc(collection(firestore, 'users', user.uid, 'transactions'));
         
-        const newTransaction: Partial<Transaction> = {
+        const newTransaction: Omit<Transaction, 'id'> = {
             userId: user.uid,
             descricao: `${description.trim()} (${i + 1}/${count})`,
             valor: installmentValue,
@@ -423,8 +438,9 @@ export default function FinancyCanvas() {
             totalParcelas: count,
             status: 'pendente',
         };
+        
         if (selectedGroupId && selectedGroupId !== 'none') {
-            newTransaction.groupId = selectedGroupId;
+            (newTransaction as Partial<Transaction>).groupId = selectedGroupId;
         }
 
         batch.set(transactionRef, newTransaction);
@@ -615,6 +631,8 @@ export default function FinancyCanvas() {
         setReportSearchTerm(''); 
         setInstallmentGroupFilter('all');
         setInstallmentNameFilter('all');
+        setExpenseGroupFilter('all');
+        setExpenseNameFilter('all');
     }, 300);
   };
   
@@ -674,9 +692,41 @@ export default function FinancyCanvas() {
 
   const renderGenericReport = (items: Transaction[], title: 'transação' | 'receita' | 'despesa') => {
       const total = items.reduce((acc, d) => acc + (d.tipo === 'receita' ? d.valor : -d.valor), 0);
+      const isExpenseReport = title === 'despesa';
+
       return (
         <div className="py-4 pr-2">
             <div className="flex flex-col space-y-4">
+              {isExpenseReport && (
+                 <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Select value={expenseGroupFilter} onValueChange={setExpenseGroupFilter}>
+                            <SelectTrigger><SelectValue placeholder="Filtrar por grupo..." /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todos os Grupos</SelectItem>
+                                {despesaGroups.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        <Select value={expenseNameFilter} onValueChange={setExpenseNameFilter}>
+                            <SelectTrigger><SelectValue placeholder="Filtrar por nome..." /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todos os Nomes</SelectItem>
+                                {despesaDescriptions.map(d => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {(expenseGroupFilter !== 'all' || expenseNameFilter !== 'all') && (
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-primary self-start" 
+                            onClick={() => { setExpenseGroupFilter('all'); setExpenseNameFilter('all'); }}>
+                            <FilterX className="mr-2 h-4 w-4" />
+                            Limpar Filtros
+                        </Button>
+                    )}
+                 </>
+              )}
                 <div className="grid grid-cols-2 gap-2">
                     <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -718,6 +768,7 @@ export default function FinancyCanvas() {
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm text-foreground truncate">{d.descricao}</p>
                                         {d.groupId && groupMap.get(d.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(d.groupId)}</span>)}
+                                        {d.observacao && <p className="text-xs text-muted-foreground italic mt-1">Obs: {d.observacao}</p>}
                                         <p className="text-xs text-muted-foreground mt-1">{d.data?.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                                     </div>
                                 </div>
@@ -1150,5 +1201,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
