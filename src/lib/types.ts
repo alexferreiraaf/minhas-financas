@@ -8,7 +8,7 @@ export interface Transaction {
   valor: number;
   observacao?: string;
   tipo: 'receita' | 'despesa';
-  data: any;
+  data: Timestamp;
   groupId?: string;
   isParcela?: boolean;
   parcelaId?: string;

@@ -52,13 +52,13 @@
     "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^20",
     "genkit-cli": "^1.20.0",
     "postcss": "^8",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "tailwindcss": "^3.4.1"
   }
 }
