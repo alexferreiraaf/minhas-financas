@@ -383,9 +383,14 @@ export default function FinancyCanvas() {
 
     if (finalObservation) {
         transactionData.observacao = finalObservation;
+    } else {
+        delete (transactionData as any).observacao;
     }
+
     if (selectedGroupId && selectedGroupId !== 'none') {
         transactionData.groupId = selectedGroupId;
+    } else {
+        delete (transactionData as any).groupId;
     }
 
     
@@ -614,7 +619,7 @@ export default function FinancyCanvas() {
     setReportMonth(getMonth(new Date()));
     setReportYear(getYear(new Date()));
     setReportView(view);
-    setShowReportModal(true);
+setShowReportModal(true);
   };
 
   const openInstallmentDetails = (installment: Transaction) => {
@@ -953,23 +958,30 @@ export default function FinancyCanvas() {
         {pageError && !showModal && <Alert variant="destructive" className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Ops! Ocorreu um Erro</AlertTitle><AlertDescription className="font-mono text-xs">{typeof pageError === 'string' ? pageError : pageError.message}</AlertDescription></Alert>}
         
         <header className="mb-8 p-4 sm:p-6 bg-card rounded-2xl shadow-lg border-t-4 border-primary">
-          <div className="flex justify-between items-start sm:items-center mb-4 flex-col sm:flex-row">
-            <h1 className="text-2xl font-extrabold text-foreground flex items-center mb-2 sm:mb-0"><CreditCard className="w-6 h-6 mr-2 text-primary" />Minhas Finanças</h1>
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-muted-foreground flex items-center" title={user?.email || user?.uid}><Users className="w-3 h-3 mr-1" />{user?.email || user?.uid.substring(0,10)}</span>
-              <ThemeToggleButton />
-              <Button variant="ghost" size="icon" onClick={handleLogout} title="Sair"><LogOut className="w-4 h-4" /></Button>
-            </div>
+          <div className="flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
+              <div className="flex-1">
+                  <h1 className="text-2xl font-extrabold text-foreground flex items-center"><CreditCard className="w-6 h-6 mr-2 text-primary" />Minhas Finanças</h1>
+                  <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mt-4">Saldo Atual (Pago)</h2>
+                  <p className={`text-4xl font-bold mt-1 transition-colors duration-300 ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</p>
+              </div>
+              <div className="flex items-center space-x-2 self-start sm:self-center">
+                  <div className="flex flex-col items-end">
+                      <span className="text-xs text-muted-foreground flex items-center truncate" title={user?.email || user?.uid}>
+                          <Users className="w-3 h-3 mr-1" />
+                          <span className="max-w-[150px] sm:max-w-xs truncate">{user?.email || user?.uid.substring(0,10)}</span>
+                      </span>
+                  </div>
+                  <ThemeToggleButton />
+                  <Button variant="ghost" size="icon" onClick={handleLogout} title="Sair"><LogOut className="w-4 h-4" /></Button>
+              </div>
           </div>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Saldo Atual (Pago)</h2>
-          <p className={`text-4xl font-bold mt-1 transition-colors duration-300 ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</p>
         </header>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Button onClick={() => openModalForNew('receita')} className="p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-5 h-5 mr-2" />Entradas</Button>
-          <Button onClick={() => openModalForNew('despesa')} className="p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-5 h-5 mr-2" />Saídas</Button>
-          <Button onClick={openInstallmentModal} className="p-6 bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-5 h-5 mr-2" />Lançar Parcelados</Button>
-          <Button onClick={() => openReport('summary')} className="p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><FileText className="w-5 h-5 mr-2" />Relatórios</Button>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-8">
+          <Button onClick={() => openModalForNew('receita')} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Entradas</Button>
+          <Button onClick={() => openModalForNew('despesa')} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Saídas</Button>
+          <Button onClick={openInstallmentModal} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Parcelados</Button>
+          <Button onClick={() => openReport('summary')} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><FileText className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Relatórios</Button>
         </div>
 
         <Card className="shadow-xl">
@@ -991,7 +1003,7 @@ export default function FinancyCanvas() {
                             <AccordionTrigger>
                                 <div className="flex justify-between items-center w-full pr-4">
                                     <span className="font-semibold text-lg capitalize">{month.monthLabel}</span>
-                                    <div className="flex items-center space-x-4 text-sm">
+                                    <div className="hidden sm:flex items-center space-x-4 text-sm">
                                         <span className="text-emerald-500">{formatCurrency(month.totalReceitas)}</span>
                                         <span className="text-red-500">-{formatCurrency(month.totalDespesas)}</span>
                                         <span className={`font-bold ${month.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(month.saldo)}</span>
@@ -999,36 +1011,38 @@ export default function FinancyCanvas() {
                                 </div>
                             </AccordionTrigger>
                             <AccordionContent>
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Descrição</TableHead>
-                                            <TableHead className="text-right">Data</TableHead>
-                                            <TableHead className="text-right">Valor</TableHead>
-                                            <TableHead className="w-[80px]"></TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {month.transactions.map(t => (
-                                            <TableRow key={t.id} className="group">
-                                                <TableCell>
-                                                    <p className="font-medium truncate max-w-[200px] sm:max-w-xs">{t.descricao}</p>
-                                                    {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(t.groupId)}</span>}
-                                                </TableCell>
-                                                <TableCell className="text-right text-muted-foreground text-xs">{format(t.data.toDate(), 'dd/MM/yy')}</TableCell>
-                                                <TableCell className={`text-right font-medium ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                    {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
-                                                </TableCell>
-                                                <TableCell className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <div className="flex items-center justify-end">
-                                                        {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>}
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
-                                                    </div>
-                                                </TableCell>
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Descrição</TableHead>
+                                                <TableHead className="text-right">Data</TableHead>
+                                                <TableHead className="text-right">Valor</TableHead>
+                                                <TableHead className="w-[80px]"></TableHead>
                                             </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {month.transactions.map(t => (
+                                                <TableRow key={t.id} className="group">
+                                                    <TableCell>
+                                                        <p className="font-medium truncate max-w-[150px] sm:max-w-xs">{t.descricao}</p>
+                                                        {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(t.groupId)}</span>}
+                                                    </TableCell>
+                                                    <TableCell className="text-right text-muted-foreground text-xs">{format(t.data.toDate(), 'dd/MM/yy')}</TableCell>
+                                                    <TableCell className={`text-right font-medium whitespace-nowrap ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                        {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
+                                                    </TableCell>
+                                                    <TableCell className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <div className="flex items-center justify-end">
+                                                            {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>}
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
                             </AccordionContent>
                         </AccordionItem>
                     ))}
@@ -1164,7 +1178,7 @@ export default function FinancyCanvas() {
       </Dialog>
 
       <Dialog open={showReportModal} onOpenChange={handleCloseReportModal}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg md:max-w-2xl">
             <DialogHeader>{renderReportHeader()}</DialogHeader>
             {reportView === 'summary' && <div className="space-y-4 py-4">
                     <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" onClick={() => setReportView('all')}><span className="font-medium text-blue-700 dark:text-blue-300">Todos os Lançamentos</span><span className="font-bold text-lg text-blue-600 dark:text-blue-400">{transactions.length}</span></div>
@@ -1210,5 +1224,3 @@ export default function FinancyCanvas() {
     </div>
   );
 }
-
-    
