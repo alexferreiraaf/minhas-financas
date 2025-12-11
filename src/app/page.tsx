@@ -958,13 +958,13 @@ setShowReportModal(true);
         {pageError && !showModal && <Alert variant="destructive" className="mb-4"><AlertTriangle className="h-4 w-4" /><AlertTitle>Ops! Ocorreu um Erro</AlertTitle><AlertDescription className="font-mono text-xs">{typeof pageError === 'string' ? pageError : pageError.message}</AlertDescription></Alert>}
         
         <header className="mb-8 p-4 sm:p-6 bg-card rounded-2xl shadow-lg border-t-4 border-primary">
-          <div className="flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
               <div className="flex-1">
                   <h1 className="text-2xl font-extrabold text-foreground flex items-center"><CreditCard className="w-6 h-6 mr-2 text-primary" />Minhas Finanças</h1>
                   <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mt-4">Saldo Atual (Pago)</h2>
                   <p className={`text-4xl font-bold mt-1 transition-colors duration-300 ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</p>
               </div>
-              <div className="flex items-center space-x-2 self-start sm:self-center">
+              <div className="flex items-center space-x-2 self-start sm:self-center w-full sm:w-auto justify-end">
                   <div className="flex flex-col items-end">
                       <span className="text-xs text-muted-foreground flex items-center truncate" title={user?.email || user?.uid}>
                           <Users className="w-3 h-3 mr-1" />
@@ -978,10 +978,10 @@ setShowReportModal(true);
         </header>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-8">
-          <Button onClick={() => openModalForNew('receita')} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Entradas</Button>
-          <Button onClick={() => openModalForNew('despesa')} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Saídas</Button>
-          <Button onClick={openInstallmentModal} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Parcelados</Button>
-          <Button onClick={() => openReport('summary')} className="h-16 sm:h-auto text-xs sm:text-sm p-2 sm:p-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><FileText className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Relatórios</Button>
+          <Button onClick={() => openModalForNew('receita')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Entradas</Button>
+          <Button onClick={() => openModalForNew('despesa')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Saídas</Button>
+          <Button onClick={openInstallmentModal} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Parcelados</Button>
+          <Button onClick={() => openReport('summary')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><FileText className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Relatórios</Button>
         </div>
 
         <Card className="shadow-xl">
@@ -1053,7 +1053,7 @@ setShowReportModal(true);
       </div>
 
       <Dialog open={showModal} onOpenChange={(isOpen) => { if (!isOpen) { resetAndCloseModal() } else { setShowModal(true) } }}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent>
           <DialogHeader><DialogTitle className={`text-2xl font-bold ${modalColor}`}>{modalTitle}</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
              {error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Erro</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
@@ -1115,7 +1115,7 @@ setShowReportModal(true);
       </Dialog>
       
       <Dialog open={showInstallmentModal} onOpenChange={(isOpen) => { if (!isOpen) { resetAndCloseInstallmentModal() } else { setShowInstallmentModal(true) } }}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent>
           <DialogHeader><DialogTitle className="text-2xl font-bold text-sky-500">Adicionar Compra Parcelada</DialogTitle></DialogHeader>
           <form onSubmit={handleInstallmentSubmit} className="space-y-4 pt-4">
             {error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Erro</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
