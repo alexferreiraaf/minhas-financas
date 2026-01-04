@@ -384,7 +384,7 @@ export default function FinancyCanvas() {
       const finalY = (doc as any).lastAutoTable.finalY;
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc-text(footerText, 14, finalY + 10);
+      doc.text(footerText, 14, finalY + 10);
     }
     
     doc.save(`${title.toLowerCase().replace(/ /g, '_')}_${period.toLowerCase()}.pdf`);
