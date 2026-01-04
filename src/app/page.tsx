@@ -2,12 +2,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX, FileText, Eye } from 'lucide-react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX, FileText, Eye, FileDown } from 'lucide-react';
 import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
 import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -27,6 +29,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+  }
+}
 
 export default function FinancyCanvas() {
   const { firestore, auth } = useFirebase();
@@ -351,6 +358,37 @@ export default function FinancyCanvas() {
     });
     setInstallmentTotalValue(inputValue);
   };
+
+  const handleGeneratePdf = useCallback((data: any[], title: string, columns: any[], footerText?: string) => {
+    const doc = new jsPDF();
+    const monthLabel = months.find(m => m.value === reportMonth)?.label;
+    const period = `${monthLabel} de ${reportYear}`.toUpperCase();
+
+    doc.setFontSize(18);
+    doc.text(title, 14, 22);
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Período: ${period}`, 14, 29);
+
+    const tableData = data.map(item => columns.map(col => col.dataKey(item)));
+    
+    doc.autoTable({
+      startY: 35,
+      head: [columns.map(col => col.header)],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [33, 150, 243] }, // Primary color
+    });
+
+    if (footerText) {
+      const finalY = (doc as any).lastAutoTable.finalY;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc-text(footerText, 14, finalY + 10);
+    }
+    
+    doc.save(`${title.toLowerCase().replace(/ /g, '_')}_${period.toLowerCase()}.pdf`);
+  }, [months, reportMonth, reportYear]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -699,6 +737,20 @@ setShowReportModal(true);
       const total = items.reduce((acc, d) => acc + (d.tipo === 'receita' ? d.valor : -d.valor), 0);
       const isExpenseReport = title === 'despesa';
 
+      const handlePdfGeneration = () => {
+        const pdfTitle = `Relatório de ${title === 'transação' ? 'Lançamentos' : title === 'receita' ? 'Receitas' : 'Despesas'}`;
+        const columns = [
+            { header: 'Data', dataKey: (item: Transaction) => format(item.data.toDate(), 'dd/MM/yy HH:mm') },
+            { header: 'Descrição', dataKey: (item: Transaction) => item.descricao },
+            { header: 'Grupo', dataKey: (item: Transaction) => item.groupId ? groupMap.get(item.groupId) || '' : '' },
+            { header: 'Valor', dataKey: (item: Transaction) => formatCurrency(item.valor) },
+            { header: 'Status', dataKey: (item: Transaction) => item.status },
+        ];
+        const totalValue = items.reduce((acc, item) => acc + (item.tipo === 'receita' ? item.valor : -item.valor), 0);
+        const footer = `Total: ${formatCurrency(totalValue)}`;
+        handleGeneratePdf(items, pdfTitle, columns, footer);
+      };
+
       return (
         <div className="py-4 pr-2">
             <div className="flex flex-col space-y-4">
@@ -754,12 +806,23 @@ setShowReportModal(true);
                     <Input placeholder={`Filtrar por descrição...`} value={reportSearchTerm} onChange={(e) => setReportSearchTerm(e.target.value)} className="pl-10" />
                     {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
                 </div>
-                 {title === 'transação' && (
-                  <div className={`flex justify-between items-center p-3 bg-muted/50 rounded-lg`}>
-                      <span className={`font-medium text-foreground`}>Balanço Filtrado</span>
-                      <span className={`font-bold text-lg ${total >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(total)}</span>
-                  </div>
-                )}
+                 <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                    {title === 'transação' ? (
+                        <>
+                            <span className={`font-medium text-foreground`}>Balanço Filtrado</span>
+                            <span className={`font-bold text-lg ${total >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(total)}</span>
+                        </>
+                    ) : (
+                        <>
+                            <span className={`font-medium text-foreground`}>Total Filtrado</span>
+                            <span className={`font-bold text-lg ${title === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(Math.abs(total))}</span>
+                        </>
+                    )}
+                    <Button variant="outline" size="sm" onClick={handlePdfGeneration} disabled={items.length === 0}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Gerar PDF
+                    </Button>
+                </div>
                 <div className="max-h-[40vh] overflow-y-auto pr-2">
                   {items.length > 0 ? (
                     <ul className="space-y-3">
@@ -804,6 +867,21 @@ setShowReportModal(true);
   };
   
   const renderInstallmentsReport = () => {
+
+    const handlePdfGeneration = () => {
+        const pdfTitle = "Relatório de Compras Parceladas";
+        const columns = [
+            { header: 'Compra', dataKey: (item: Transaction) => item.descricao.split(' (')[0] },
+            { header: 'Grupo', dataKey: (item: Transaction) => item.groupId ? groupMap.get(item.groupId) || '' : '' },
+            { header: 'Parcelas', dataKey: (item: Transaction) => `${item.totalParcelas}x` },
+            { header: 'Valor da Parcela', dataKey: (item: Transaction) => formatCurrency(item.valor) },
+            { header: 'Valor Total', dataKey: (item: Transaction) => formatCurrency(item.valor * (item.totalParcelas || 1)) },
+        ];
+        const footer = `Total de Parcelas do Mês: ${formatCurrency(monthlyInstallmentsTotal)}`;
+
+        handleGeneratePdf(filteredInstallmentPurchases, pdfTitle, columns, footer);
+    };
+
     return (
         <div className="py-4 pr-2">
             <div className="flex flex-col space-y-4">
@@ -859,6 +937,10 @@ setShowReportModal(true);
                  <div className={`flex justify-between items-center p-3 bg-muted/50 rounded-lg`}>
                       <span className={`font-medium text-foreground`}>Total de Parcelas do Mês</span>
                       <span className={`font-bold text-lg text-sky-600`}>{formatCurrency(monthlyInstallmentsTotal)}</span>
+                      <Button variant="outline" size="sm" onClick={handlePdfGeneration} disabled={filteredInstallmentPurchases.length === 0}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Gerar PDF
+                    </Button>
                   </div>
                 <div className="max-h-[45vh] overflow-y-auto pr-2">
                     {filteredInstallmentPurchases.length > 0 ? (
