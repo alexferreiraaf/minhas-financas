@@ -10,7 +10,7 @@ import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth
 import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, Legend } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -222,6 +222,26 @@ export default function FinancyCanvas() {
     }));
   }, [transactions]);
   
+  const pieChartData = useMemo(() => {
+    if (!transactions) return [];
+    const expenses = transactions.filter(t => t.tipo === 'despesa' && t.status === 'pago' && t.data && getYear(t.data.toDate()) === reportYear);
+    const grouped = expenses.reduce((acc, current) => {
+        const groupName = current.groupId ? (groupMap.get(current.groupId) || 'Outros') : 'Outros';
+        if (!acc[groupName]) {
+            acc[groupName] = 0;
+        }
+        acc[groupName] += current.valor;
+        return acc;
+    }, {} as Record<string, number>);
+
+    return Object.keys(grouped).map(name => ({
+        name,
+        value: grouped[name]
+    })).sort((a,b) => b.value - a.value);
+  }, [transactions, groupMap, reportYear]);
+  
+  const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b', '#84cc16'];
+  
   const filterTransactionsByPeriod = useCallback(<T extends Transaction>(items: T[], month: number, year: number, searchTerm: string) => {
       let filtered = items;
 
@@ -414,7 +434,7 @@ export default function FinancyCanvas() {
         descricao: description.trim(),
         valor: numericValue,
         tipo: formType,
-        data: date,
+        data: date as any,
         status: 'pago',
         isParcela: false,
     };
@@ -474,7 +494,7 @@ export default function FinancyCanvas() {
             descricao: `${description.trim()} (${i + 1}/${count})`,
             valor: installmentValue,
             tipo: 'despesa',
-            data: transactionDate,
+            data: transactionDate as any,
             isParcela: true,
             parcelaId: parcelaId,
             parcelaAtual: i + 1,
@@ -707,14 +727,14 @@ setShowReportModal(true);
             </>
         );
     }
-    const titleMap: Record<typeof reportView, string> = {
+    const titleMap: Record<string, string> = {
         'summary': "Relatório",
         'all': "Todos os Lançamentos",
         'despesas': "Relatório de Despesas",
         'receitas': "Relatório de Receitas",
         'parcelas': "Relatório de Parcelas"
     };
-    const colorMap: Record<typeof reportView, string> = {
+    const colorMap: Record<string, string> = {
         'summary': "text-foreground",
         'all': "text-primary",
         'despesas': "text-red-500",
@@ -1142,14 +1162,19 @@ setShowReportModal(true);
             <div>
               <Label htmlFor="description" className="text-left">Nome da {formType === 'receita' ? 'Entrada' : 'Saída'}</Label>
               <div className="flex items-center space-x-2 mt-1">
-                <Select onValueChange={setDescription} value={description}>
-                    <SelectTrigger id="description"><SelectValue placeholder="Selecione um nome" /></SelectTrigger>
-                    <SelectContent>
-                        {descriptionsForForm.map((desc) => (
-                            <SelectItem key={desc.id} value={desc.name}>{desc.name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <Input
+                    id="description"
+                    list="descriptions-list"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Digite ou selecione um nome"
+                    required
+                />
+                <datalist id="descriptions-list">
+                    {descriptionsForForm.map((desc) => (
+                        <option key={desc.id} value={desc.name} />
+                    ))}
+                </datalist>
                 <Button type="button" variant="outline" size="icon" onClick={() => setShowDescriptionsModal(true)}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Nomes</span></Button>
               </div>
             </div>
@@ -1204,7 +1229,19 @@ setShowReportModal(true);
             <div>
               <Label htmlFor="installment-description">Nome da Compra</Label>
               <div className="flex items-center space-x-2 mt-1">
-                <Select onValueChange={setDescription} value={description}><SelectTrigger id="installment-description"><SelectValue placeholder="Selecione ou digite um nome" /></SelectTrigger><SelectContent>{despesaDescriptions.map((desc) => <SelectItem key={desc.id} value={desc.name}>{desc.name}</SelectItem>)}</SelectContent></Select>
+                <Input
+                    id="installment-description"
+                    list="installment-descriptions-list"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Digite ou selecione um nome"
+                    required
+                />
+                <datalist id="installment-descriptions-list">
+                    {despesaDescriptions.map((desc) => (
+                        <option key={desc.id} value={desc.name} />
+                    ))}
+                </datalist>
                 <Button type="button" variant="outline" size="icon" onClick={() => { setFormType('despesa'); setShowDescriptionsModal(true);}}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Nomes</span></Button>
               </div>
             </div>
@@ -1262,12 +1299,59 @@ setShowReportModal(true);
       <Dialog open={showReportModal} onOpenChange={handleCloseReportModal}>
         <DialogContent className="sm:max-w-lg md:max-w-2xl">
             <DialogHeader>{renderReportHeader()}</DialogHeader>
-            {reportView === 'summary' && <div className="space-y-4 py-4">
-                    <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" onClick={() => setReportView('all')}><span className="font-medium text-blue-700 dark:text-blue-300">Todos os Lançamentos</span><span className="font-bold text-lg text-blue-600 dark:text-blue-400">{transactions.length}</span></div>
-                    <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors" onClick={() => setReportView('receitas')}><span className="font-medium text-emerald-700 dark:text-emerald-300">Total de Receitas</span><span className="font-bold text-lg text-emerald-600 dark:text-emerald-400">{formatCurrency(totalReceitas)}</span></div>
-                    <div className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/30 rounded-lg cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors" onClick={() => setReportView('despesas')}><span className="font-medium text-red-700 dark:text-red-300">Total de Despesas</span><span className="font-bold text-lg text-red-600 dark:text-red-400">{formatCurrency(totalDespesas)}</span></div>
-                    <div className="flex justify-between items-center p-3 bg-sky-50 dark:bg-sky-900/30 rounded-lg cursor-pointer hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors" onClick={() => setReportView('parcelas')}><span className="font-medium text-sky-700 dark:text-sky-300">Meus Parcelados</span><span className="font-bold text-lg text-sky-600 dark:text-sky-400">{uniqueInstallmentPurchases.length} compras</span></div>
-                    <div className="flex justify-between items-center p-4 bg-card border-t-2 mt-4 rounded-lg"><span className="font-bold text-foreground">Saldo Final</span><span className={`font-extrabold text-xl ${balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(balance)}</span></div>
+            {reportView === 'summary' && <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto pr-2">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="flex flex-col p-3 bg-blue-50 dark:bg-blue-900/30 rounded-xl cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" onClick={() => setReportView('all')}><span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase">Lançamentos</span><span className="font-bold text-lg text-blue-600 dark:text-blue-400">{transactions.length}</span></div>
+                      <div className="flex flex-col p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors" onClick={() => setReportView('receitas')}><span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase">Receitas</span><span className="font-bold text-lg text-emerald-600 dark:text-emerald-400 truncate" title={formatCurrency(totalReceitas)}>{formatCurrency(totalReceitas)}</span></div>
+                      <div className="flex flex-col p-3 bg-red-50 dark:bg-red-900/30 rounded-xl cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors" onClick={() => setReportView('despesas')}><span className="text-xs font-semibold text-red-700 dark:text-red-300 uppercase">Despesas</span><span className="font-bold text-lg text-red-600 dark:text-red-400 truncate" title={formatCurrency(totalDespesas)}>{formatCurrency(totalDespesas)}</span></div>
+                      <div className="flex flex-col p-3 bg-sky-50 dark:bg-sky-900/30 rounded-xl cursor-pointer hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors" onClick={() => setReportView('parcelas')}><span className="text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase">Parcelados</span><span className="font-bold text-lg text-sky-600 dark:text-sky-400">{uniqueInstallmentPurchases.length} compras</span></div>
+                    </div>
+                    
+                    <div className="p-4 bg-muted/30 rounded-2xl border">
+                        <h3 className="text-sm font-bold text-foreground mb-4">Evolução Mensal</h3>
+                        <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={[...monthlyData].reverse()} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                                    <XAxis dataKey="monthLabel" tickFormatter={(val) => val.split(' ')[0]} style={{ fontSize: '10px' }} />
+                                    <YAxis tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} style={{ fontSize: '10px' }} />
+                                    <RechartsTooltip 
+                                        formatter={(value: number) => formatCurrency(value)}
+                                        contentStyle={{ borderRadius: '8px', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}
+                                    />
+                                    <Legend wrapperStyle={{ fontSize: '12px' }} />
+                                    <Bar dataKey="totalReceitas" name="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="totalDespesas" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-muted/30 rounded-2xl border">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-bold text-foreground">Despesas por Categoria</h3>
+                        <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
+                            <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                        <div className="h-64 w-full flex items-center justify-center">
+                            {pieChartData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RechartsPieChart>
+                                        <Pie data={pieChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => { const RADIAN = Math.PI / 180; const radius = innerRadius + (outerRadius - innerRadius) * 0.5; const x = cx + radius * Math.cos(-midAngle * RADIAN); const y = cy + radius * Math.sin(-midAngle * RADIAN); return percent > 0.05 ? (<text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={12} className="font-bold drop-shadow-md">{(percent * 100).toFixed(0)}%</text>) : null;}}>
+                                            {pieChartData.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+                                        </Pie>
+                                        <RechartsTooltip formatter={(value: number) => formatCurrency(value)} contentStyle={{ borderRadius: '8px', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }} />
+                                        <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: '11px' }} />
+                                    </RechartsPieChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">Não há despesas para exibir no ano selecionado.</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between items-center p-4 bg-card shadow-sm border mt-4 rounded-xl"><span className="font-bold text-foreground uppercase tracking-wide text-sm">Saldo Final</span><span className={`font-extrabold text-2xl ${balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(balance)}</span></div>
             </div>}
             {reportView === 'all' && renderGenericReport(filteredAllTransactions, 'transação')}
             {reportView === 'despesas' && renderGenericReport(filteredDespesas, 'despesa')}
