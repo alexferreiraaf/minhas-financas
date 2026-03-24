@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX, FileText, Eye, FileDown } from 'lucide-react';
-import type { Transaction, Group, PredefinedDescription } from '@/lib/types';
+import type { Transaction, Group, PredefinedDescription, CreditCard } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
 import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth } from 'date-fns';
@@ -66,6 +66,13 @@ export default function FinancyCanvas() {
   const { data: allGroups, isLoading: isLoadingGroups } = useCollection<Group>(groupsQuery);
   const { data: allDescriptions, isLoading: isLoadingDescriptions } = useCollection<PredefinedDescription>(descriptionsQuery);
 
+  const creditCardsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(collection(firestore, 'users', user.uid, 'creditCards'));
+  }, [firestore, user]);
+
+  const { data: allCreditCards, isLoading: isLoadingCreditCards } = useCollection<CreditCard>(creditCardsQuery);
+
 
   const [error, setError] = useState('');
 
@@ -90,6 +97,9 @@ export default function FinancyCanvas() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [observation, setObservation] = useState('');
   const [referenceMonth, setReferenceMonth] = useState<string | undefined>(undefined);
+  const [selectedCreditCardId, setSelectedCreditCardId] = useState<string | null>(null);
+  const [showCreditCardsModal, setShowCreditCardsModal] = useState(false);
+  const [newCreditCardName, setNewCreditCardName] = useState('');
   
   // State for installments
   const [installmentTotalValue, setInstallmentTotalValue] = useState('');
@@ -112,6 +122,11 @@ export default function FinancyCanvas() {
     if (!allGroups) return new Map();
     return new Map(allGroups.map(g => [g.id, g.name]));
   }, [allGroups]);
+
+  const creditCardMap = useMemo(() => {
+    if (!allCreditCards) return new Map();
+    return new Map(allCreditCards.map(c => [c.id, c.name]));
+  }, [allCreditCards]);
   
   const { receitaGroups, despesaGroups } = useMemo(() => {
     if (!allGroups) return { receitaGroups: [], despesaGroups: [] };
@@ -176,7 +191,11 @@ export default function FinancyCanvas() {
     const receitasTransactions = paidTransactions.filter(t => t.tipo === 'receita');
     const receitasTotal = receitasTransactions.reduce((acc, t) => acc + t.valor, 0);
     const despesasTransations = paidTransactions.filter(t => t.tipo === 'despesa');
-    const despesasTotal = despesasTransations.reduce((acc, t) => acc + t.valor, 0);
+    
+    // Filtramos despesas que não foram no cartão para o saldo em conta
+    const cashDespesas = despesasTransations.filter(t => !t.creditCardId);
+    const despesasTotal = cashDespesas.reduce((acc, t) => acc + t.valor, 0);
+    
     const currentBalance = receitasTotal - despesasTotal;
     return { 
       balance: currentBalance, 
@@ -451,6 +470,12 @@ export default function FinancyCanvas() {
         delete (transactionData as any).groupId;
     }
 
+    if (formType === 'despesa' && selectedCreditCardId && selectedCreditCardId !== 'none') {
+        transactionData.creditCardId = selectedCreditCardId;
+    } else {
+        delete (transactionData as any).creditCardId;
+    }
+
     
     if (transactionToEdit) {
       const transactionRef = doc(firestore, 'users', user.uid, 'transactions', transactionToEdit.id);
@@ -504,6 +529,10 @@ export default function FinancyCanvas() {
         
         if (selectedGroupId && selectedGroupId !== 'none') {
             (newTransaction as Partial<Transaction>).groupId = selectedGroupId;
+        }
+
+        if (selectedCreditCardId && selectedCreditCardId !== 'none') {
+            (newTransaction as Partial<Transaction>).creditCardId = selectedCreditCardId;
         }
 
         batch.set(transactionRef, newTransaction);
@@ -612,11 +641,27 @@ export default function FinancyCanvas() {
       deleteDocumentNonBlocking(descriptionRef);
   };
 
+  const handleAddCreditCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !firestore || newCreditCardName.trim() === '') return;
+    const newCard = { userId: user.uid, name: newCreditCardName.trim() };
+    const userCreditCardsCollection = collection(firestore, 'users', user.uid, 'creditCards');
+    addDocumentNonBlocking(userCreditCardsCollection, newCard);
+    setNewCreditCardName('');
+  };
+
+  const handleDeleteCreditCard = (cardId: string) => {
+    if (!user || !firestore) return;
+    const cardRef = doc(firestore, 'users', user.uid, 'creditCards', cardId);
+    deleteDocumentNonBlocking(cardRef);
+  };
+
   const resetAndCloseModal = () => {
     setDescription(''); 
     setValue(''); 
     setDate(new Date()); 
     setSelectedGroupId(null); 
+    setSelectedCreditCardId(null);
     setObservation(''); 
     setReferenceMonth(undefined); 
     setTransactionToEdit(null);
@@ -664,6 +709,7 @@ export default function FinancyCanvas() {
     }
     
     setSelectedGroupId(transaction.groupId || null);
+    setSelectedCreditCardId(transaction.creditCardId || null);
     setObservation(transaction.observacao || '');
     setShowModal(true);
   };
@@ -685,7 +731,7 @@ setShowReportModal(true);
     setShowInstallmentDetailModal(true);
   }
 
-  const isLoading = isUserLoading || isLoadingTransactions || isLoadingGroups || isLoadingDescriptions || !user;
+  const isLoading = isUserLoading || (!!user && (isLoadingTransactions || isLoadingGroups || isLoadingDescriptions || isLoadingCreditCards));
   
   const handleCloseReportModal = () => {
     setShowReportModal(false);
@@ -855,7 +901,10 @@ setShowReportModal(true);
                                     <div className="mr-3">{d.status === 'pago' ? <CheckSquare className={`h-5 w-5 text-emerald-500`} /> : <Clock className={`h-5 w-5 text-amber-500`} />}</div>
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm text-foreground truncate">{d.descricao}</p>
-                                        {d.groupId && groupMap.get(d.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(d.groupId)}</span>)}
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {d.groupId && groupMap.get(d.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full inline-block">{groupMap.get(d.groupId)}</span>)}
+                                          {d.creditCardId && creditCardMap.has(d.creditCardId) && (<span className="text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full inline-block flex items-center"><CreditCard className="w-3 h-3 mr-1" />{creditCardMap.get(d.creditCardId)}</span>)}
+                                        </div>
                                         <p className="text-xs text-muted-foreground mt-1">{d.data?.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                                     </div>
                                 </div>
@@ -1074,6 +1123,7 @@ setShowReportModal(true);
                       </span>
                   </div>
                   <ThemeToggleButton />
+                  <Button variant="ghost" size="icon" onClick={() => setShowCreditCardsModal(true)} title="Gerenciar Cartões"><CreditCard className="w-4 h-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={handleLogout} title="Sair"><LogOut className="w-4 h-4" /></Button>
               </div>
           </div>
@@ -1128,7 +1178,10 @@ setShowReportModal(true);
                                                 <TableRow key={t.id} className="group">
                                                     <TableCell>
                                                         <p className="font-medium truncate max-w-[150px] sm:max-w-xs">{t.descricao}</p>
-                                                        {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full mt-1 inline-block">{groupMap.get(t.groupId)}</span>}
+                                                        <div className="flex flex-wrap gap-1 mt-1">
+                                                          {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full inline-block">{groupMap.get(t.groupId)}</span>}
+                                                          {t.creditCardId && creditCardMap.has(t.creditCardId) && <span className="text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full inline-block flex items-center"><CreditCard className="w-3 h-3 mr-1" />{creditCardMap.get(t.creditCardId)}</span>}
+                                                        </div>
                                                     </TableCell>
                                                     <TableCell className="text-right text-muted-foreground text-xs">{format(t.data.toDate(), 'dd/MM/yy')}</TableCell>
                                                     <TableCell className={`text-right font-medium whitespace-nowrap ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -1185,6 +1238,15 @@ setShowReportModal(true);
                 <Button type="button" variant="outline" size="icon" onClick={() => setShowGroupsModal(true)}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Grupos</span></Button>
               </div>
             </div>
+            {formType === 'despesa' && (
+              <div>
+                <Label htmlFor="credit-card">Cartão de Crédito</Label>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Select onValueChange={(value) => setSelectedCreditCardId(value === 'none' ? null : value)} value={selectedCreditCardId || 'none'}><SelectTrigger id="credit-card"><SelectValue placeholder="Pagamento em dinheiro/PIX" /></SelectTrigger><SelectContent><SelectItem value="none">Dinheiro / PIX (Debita do saldo)</SelectItem>{allCreditCards?.map((card) => <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>)}</SelectContent></Select>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setShowCreditCardsModal(true)}><CreditCard className="h-4 w-4" /><span className="sr-only">Gerenciar Cartões</span></Button>
+                </div>
+              </div>
+            )}
             <div>
               <Label htmlFor="value" className="text-left">Valor (R$)</Label>
               <Input id="value" value={value} onChange={handleValueChange} placeholder="0,00" required className="mt-1" type="text" inputMode="decimal"/>
@@ -1250,6 +1312,13 @@ setShowReportModal(true);
               <div className="flex items-center space-x-2 mt-1">
                 <Select onValueChange={(value) => setSelectedGroupId(value === 'none' ? null : value)} value={selectedGroupId || 'none'}><SelectTrigger id="installment-group"><SelectValue placeholder="Selecione um grupo (opcional)" /></SelectTrigger><SelectContent><SelectItem value="none">Nenhum grupo</SelectItem>{despesaGroups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select>
                 <Button type="button" variant="outline" size="icon" onClick={() => { setFormType('despesa'); setShowGroupsModal(true);}}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Grupos</span></Button>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="installment-credit-card">Cartão de Crédito</Label>
+              <div className="flex items-center space-x-2 mt-1">
+                <Select onValueChange={(value) => setSelectedCreditCardId(value === 'none' ? null : value)} value={selectedCreditCardId || 'none'}><SelectTrigger id="installment-credit-card"><SelectValue placeholder="Pagamento em dinheiro/PIX" /></SelectTrigger><SelectContent><SelectItem value="none">Dinheiro / PIX (Debita do saldo)</SelectItem>{allCreditCards?.map((card) => <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>)}</SelectContent></Select>
+                <Button type="button" variant="outline" size="icon" onClick={() => setShowCreditCardsModal(true)}><CreditCard className="h-4 w-4" /><span className="sr-only">Gerenciar Cartões</span></Button>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -1362,6 +1431,33 @@ setShowReportModal(true);
       </Dialog>
       
       {renderInstallmentDetailModal()}
+
+      {/* Credit Cards Management Modal */}
+      <Dialog open={showCreditCardsModal} onOpenChange={setShowCreditCardsModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Gerenciar Cartões de Crédito</DialogTitle>
+            <DialogDescription>Adicione ou remova cartões de crédito.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <form onSubmit={handleAddCreditCard} className="flex gap-2">
+              <Input placeholder="Nome do cartão (ex: Nubank)" value={newCreditCardName} onChange={(e) => setNewCreditCardName(e.target.value)} />
+              <Button type="submit" size="icon"><PlusCircle className="h-4 w-4" /></Button>
+            </form>
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+              {allCreditCards && allCreditCards.length > 0 ? allCreditCards.map(card => (
+                <div key={card.id} className="flex justify-between items-center p-2 bg-muted/30 rounded-lg">
+                  <span className="text-sm font-medium">{card.name}</span>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteCreditCard(card.id)}><Trash2 className="h-4 w-4" /></Button>
+                </div>
+              )) : <p className="text-center py-4 text-sm text-muted-foreground">Nenhum cartão cadastrado.</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreditCardsModal(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       <AlertDialog open={!!transactionToDelete} onOpenChange={(isOpen) => !isOpen && setTransactionToDelete(null)}>
         <AlertDialogContent>

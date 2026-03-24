@@ -68,6 +68,14 @@ service cloud.firestore {
       match /predefinedDescriptions/{descriptionId} {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
+
+      /**
+       * @description Secures the user's creditCards subcollection.
+       * @path /databases/{database}/documents/users/{userId}/creditCards/{cardId}
+       */
+      match /creditCards/{cardId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
     }
   }
 }

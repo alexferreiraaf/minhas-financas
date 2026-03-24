@@ -10,11 +10,18 @@ export interface Transaction {
   tipo: 'receita' | 'despesa';
   data: Timestamp;
   groupId?: string;
+  creditCardId?: string; // ID do cartão de crédito usado (opcional)
   isParcela?: boolean;
   parcelaId?: string;
   parcelaAtual?: number;
   totalParcelas?: number;
   status: 'pago' | 'pendente';
+}
+
+export interface CreditCard {
+  id: string;
+  userId: string;
+  name: string;
 }
 
 export interface Group {
