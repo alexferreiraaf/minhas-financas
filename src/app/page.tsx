@@ -83,7 +83,7 @@ export default function FinancyCanvas() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [showGroupsModal, setShowGroupsModal] = useState(false);
   const [showDescriptionsModal, setShowDescriptionsModal] = useState(false);
-  const [reportView, setReportView] = useState<'summary' | 'all' | 'despesas' | 'receitas' | 'parcelas'>('summary');
+  const [reportView, setReportView] = useState<'summary' | 'all' | 'despesas' | 'receitas' | 'parcelas' | 'cartoes'>('summary');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [installmentToDelete, setInstallmentToDelete] = useState<Transaction | null>(null);
@@ -117,6 +117,9 @@ export default function FinancyCanvas() {
   // State for expense report filtering
   const [expenseGroupFilter, setExpenseGroupFilter] = useState<string>('all');
   const [expenseNameFilter, setExpenseNameFilter] = useState<string>('all');
+  
+  // State for credit card report filtering
+  const [creditCardFilter, setCreditCardFilter] = useState<string>('all');
 
   const groupMap = useMemo(() => {
     if (!allGroups) return new Map();
@@ -209,7 +212,7 @@ export default function FinancyCanvas() {
   const monthlyData = useMemo(() => {
     if (!transactions) return [];
 
-    const grouped: { [key: string]: { monthLabel: string; transactions: Transaction[]; totalReceitas: number; totalDespesas: number; }} = {};
+    const grouped: { [key: string]: { monthLabel: string; transactions: Transaction[]; totalReceitas: number; totalDespesas: number; totalCartao: number; }} = {};
     const paidTransactions = transactions.filter(t => t.status === 'pago');
 
     paidTransactions.forEach(t => {
@@ -223,6 +226,7 @@ export default function FinancyCanvas() {
           transactions: [],
           totalReceitas: 0,
           totalDespesas: 0,
+          totalCartao: 0,
         };
       }
       
@@ -230,7 +234,11 @@ export default function FinancyCanvas() {
       if (t.tipo === 'receita') {
         grouped[monthKey].totalReceitas += t.valor;
       } else {
-        grouped[monthKey].totalDespesas += t.valor;
+        if (t.creditCardId) {
+            grouped[monthKey].totalCartao += t.valor;
+        } else {
+            grouped[monthKey].totalDespesas += t.valor;
+        }
       }
     });
 
@@ -355,6 +363,51 @@ export default function FinancyCanvas() {
     return transactions.filter(t => t.parcelaId === installmentToView.parcelaId)
       .sort((a,b) => (a.parcelaAtual || 0) - (b.parcelaAtual || 0));
   }, [installmentToView, transactions]);
+
+  const creditCardSpending = useMemo(() => {
+    if (!transactions || !allCreditCards) return [];
+
+    const monthExpenses = transactions.filter(t => {
+        const transactionDate = t.data?.toDate();
+        if (!transactionDate) return false;
+        return t.tipo === 'despesa' && 
+               getMonth(transactionDate) === reportMonth && 
+               getYear(transactionDate) === reportYear &&
+               !!t.creditCardId;
+    });
+
+    const spendingMap = new Map<string, number>();
+    monthExpenses.forEach(t => {
+        const current = spendingMap.get(t.creditCardId!) || 0;
+        spendingMap.set(t.creditCardId!, current + t.valor);
+    });
+
+    return allCreditCards.map(card => ({
+        ...card,
+        total: spendingMap.get(card.id) || 0
+    })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+  }, [transactions, allCreditCards, reportMonth, reportYear]);
+
+  const filteredCreditCardTransactions = useMemo(() => {
+      let filtered = transactions.filter(t => {
+          const transactionDate = t.data?.toDate();
+          if (!transactionDate) return false;
+          return t.tipo === 'despesa' && 
+                 getMonth(transactionDate) === reportMonth && 
+                 getYear(transactionDate) === reportYear &&
+                 !!t.creditCardId;
+      });
+
+      if (creditCardFilter !== 'all') {
+          filtered = filtered.filter(t => t.creditCardId === creditCardFilter);
+      }
+
+      if (reportSearchTerm) {
+          filtered = filtered.filter(t => t.descricao.toLowerCase().includes(reportSearchTerm.toLowerCase()));
+      }
+
+      return filtered;
+  }, [transactions, reportMonth, reportYear, creditCardFilter, reportSearchTerm]);
 
 
 
@@ -742,6 +795,7 @@ setShowReportModal(true);
         setInstallmentNameFilter('all');
         setExpenseGroupFilter('all');
         setExpenseNameFilter('all');
+        setCreditCardFilter('all');
     }, 300);
   };
   
@@ -778,14 +832,16 @@ setShowReportModal(true);
         'all': "Todos os Lançamentos",
         'despesas': "Relatório de Despesas",
         'receitas': "Relatório de Receitas",
-        'parcelas': "Relatório de Parcelas"
+        'parcelas': "Relatório de Parcelas",
+        'cartoes': "Gastos por Cartão"
     };
     const colorMap: Record<string, string> = {
         'summary': "text-foreground",
         'all': "text-primary",
         'despesas': "text-red-500",
         'receitas': "text-emerald-500",
-        'parcelas': "text-sky-500"
+        'parcelas': "text-sky-500",
+        'cartoes': "text-blue-500"
     };
     const title = titleMap[reportView];
     const color = colorMap[reportView];
@@ -1038,7 +1094,93 @@ setShowReportModal(true);
         </div>
     );
   };
-  
+
+  const renderCreditCardsReport = () => {
+    const handlePdfGeneration = () => {
+        const pdfTitle = "Relatório de Gastos por Cartão";
+        const columns = [
+            { header: 'Data', dataKey: (item: Transaction) => format(item.data.toDate(), 'dd/MM/yy HH:mm') },
+            { header: 'Descrição', dataKey: (item: Transaction) => item.descricao },
+            { header: 'Cartão', dataKey: (item: Transaction) => item.creditCardId ? creditCardMap.get(item.creditCardId) || '' : '' },
+            { header: 'Valor', dataKey: (item: Transaction) => formatCurrency(item.valor) },
+        ];
+        const totalValue = filteredCreditCardTransactions.reduce((acc, item) => acc + item.valor, 0);
+        const footer = `Total no Período: ${formatCurrency(totalValue)}`;
+        handleGeneratePdf(filteredCreditCardTransactions, pdfTitle, columns, footer);
+    };
+
+    const periodTotal = filteredCreditCardTransactions.reduce((acc, t) => acc + t.valor, 0);
+
+    return (
+        <div className="py-4 pr-2">
+            <div className="flex flex-col space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Select value={creditCardFilter} onValueChange={setCreditCardFilter}>
+                        <SelectTrigger><SelectValue placeholder="Filtrar por cartão..." /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todos os Cartões</SelectItem>
+                            {allCreditCards?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <div className="grid grid-cols-2 gap-2">
+                        <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Filtrar por descrição..." value={reportSearchTerm} onChange={(e) => setReportSearchTerm(e.target.value)} className="pl-10" />
+                    {reportSearchTerm && <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" onClick={() => setReportSearchTerm('')}><X className="h-4 w-4"/></Button>}
+                </div>
+
+                <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                    <div className="flex flex-col">
+                        <span className="text-xs font-semibold text-muted-foreground uppercase">Total Filtrado</span>
+                        <span className="font-bold text-lg text-blue-600">{formatCurrency(periodTotal)}</span>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handlePdfGeneration} disabled={filteredCreditCardTransactions.length === 0}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Gerar PDF
+                    </Button>
+                </div>
+
+                <div className="max-h-[45vh] overflow-y-auto pr-2">
+                    {filteredCreditCardTransactions.length > 0 ? (
+                        <ul className="space-y-2">
+                            {filteredCreditCardTransactions.map(t => (
+                                <li key={t.id} className="flex justify-between items-center p-3 bg-card border-l-4 border-blue-400 rounded-lg shadow-sm">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm truncate">{t.descricao}</p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[10px] text-muted-foreground">{format(t.data.toDate(), 'dd/MM/yyyy')}</span>
+                                            <span className="text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full flex items-center">
+                                                <CreditCard className="w-2.5 h-2.5 mr-1" />
+                                                {creditCardMap.get(t.creditCardId!) || 'Cartão'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <p className="font-bold text-sm text-red-600 ml-4">{formatCurrency(t.valor)}</p>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <div className="text-center py-10 text-muted-foreground">
+                            <p>Nenhuma transação encontrada no cartão para este período.</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+  };
+
   const renderInstallmentDetailModal = () => {
     if (!installmentToView) return null;
     const installments = allInstallmentsForSelectedPurchase;
@@ -1156,9 +1298,12 @@ setShowReportModal(true);
                                 <div className="flex justify-between items-center w-full pr-4">
                                     <span className="font-semibold text-lg capitalize">{month.monthLabel}</span>
                                     <div className="hidden sm:flex items-center space-x-4 text-sm">
-                                        <span className="text-emerald-500">{formatCurrency(month.totalReceitas)}</span>
-                                        <span className="text-red-500">-{formatCurrency(month.totalDespesas)}</span>
-                                        <span className={`font-bold ${month.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(month.saldo)}</span>
+                                        <span className="text-emerald-500" title="Receitas">{formatCurrency(month.totalReceitas)}</span>
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-red-500" title="Despesas em Dinheiro">-{formatCurrency(month.totalDespesas)}</span>
+                                            <span className="text-blue-500 text-[10px] font-semibold" title="Despesas no Cartão">-{formatCurrency(month.totalCartao)}</span>
+                                        </div>
+                                        <span className={`font-bold ${month.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`} title="Saldo em Conta">{formatCurrency(month.saldo)}</span>
                                     </div>
                                 </div>
                             </AccordionTrigger>
@@ -1389,7 +1534,8 @@ setShowReportModal(true);
                                     />
                                     <Legend wrapperStyle={{ fontSize: '12px' }} />
                                     <Bar dataKey="totalReceitas" name="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="totalDespesas" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="totalDespesas" name="Dinheiro" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="totalCartao" name="Cartão" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
@@ -1420,12 +1566,52 @@ setShowReportModal(true);
                         </div>
                     </div>
 
+                    <div className="p-4 bg-muted/30 rounded-2xl border">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-sm font-bold text-foreground">Gastos por Cartão de Crédito</h3>
+                            <div className="flex items-center gap-2">
+                                <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
+                                    <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
+                                </Select>
+                                <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
+                                    <SelectTrigger className="w-20 h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        {creditCardSpending.length > 0 ? (
+                            <div className="space-y-3">
+                                {creditCardSpending.map(card => (
+                                    <div key={card.id} className="flex flex-col space-y-1">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="font-medium flex items-center"><CreditCard className="w-3.5 h-3.5 mr-2 text-blue-500" />{card.name}</span>
+                                            <span className="font-bold text-red-500">{formatCurrency(card.total)}</span>
+                                        </div>
+                                        <Progress value={(card.total / Math.max(...creditCardSpending.map(c => c.total))) * 100} className="h-1.5" />
+                                    </div>
+                                ))}
+                                <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="w-full mt-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                    onClick={() => setReportView('cartoes')}
+                                >
+                                    Ver Detalhes por Cartão
+                                </Button>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-center py-6 text-muted-foreground italic">Nenhum gasto no cartão para este período.</p>
+                        )}
+                    </div>
+
                     <div className="flex justify-between items-center p-4 bg-card shadow-sm border mt-4 rounded-xl"><span className="font-bold text-foreground uppercase tracking-wide text-sm">Saldo Final</span><span className={`font-extrabold text-2xl ${balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{formatCurrency(balance)}</span></div>
             </div>}
             {reportView === 'all' && renderGenericReport(filteredAllTransactions, 'transação')}
             {reportView === 'despesas' && renderGenericReport(filteredDespesas, 'despesa')}
             {reportView === 'receitas' && renderGenericReport(filteredReceitas, 'receita')}
             {reportView === 'parcelas' && renderInstallmentsReport()}
+            {reportView === 'cartoes' && renderCreditCardsReport()}
             <DialogFooter>{reportView !== 'summary' ? <Button onClick={() => setReportView('summary')} variant="outline">Voltar ao Resumo</Button> : <Button onClick={handleCloseReportModal} variant="outline">Fechar</Button>}</DialogFooter>
         </DialogContent>
       </Dialog>
