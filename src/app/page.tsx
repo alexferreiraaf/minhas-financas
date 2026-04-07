@@ -6,7 +6,7 @@ import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart,
 import type { Transaction, Group, PredefinedDescription, CreditCard } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
-import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth } from 'date-fns';
+import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth, endOfMonth, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -120,6 +120,8 @@ export default function FinancyCanvas() {
   
   // State for credit card report filtering
   const [creditCardFilter, setCreditCardFilter] = useState<string>('all');
+  const [creditCardStartDate, setCreditCardStartDate] = useState<Date | undefined>(startOfMonth(new Date()));
+  const [creditCardEndDate, setCreditCardEndDate] = useState<Date | undefined>(endOfMonth(new Date()));
 
   const groupMap = useMemo(() => {
     if (!allGroups) return new Map();
@@ -370,9 +372,17 @@ export default function FinancyCanvas() {
     const monthExpenses = transactions.filter(t => {
         const transactionDate = t.data?.toDate();
         if (!transactionDate) return false;
+
+        let inRange = true;
+        if (creditCardStartDate) {
+            inRange = inRange && transactionDate >= startOfDay(creditCardStartDate);
+        }
+        if (creditCardEndDate) {
+            inRange = inRange && transactionDate <= endOfDay(creditCardEndDate);
+        }
+
         return t.tipo === 'despesa' && 
-               getMonth(transactionDate) === reportMonth && 
-               getYear(transactionDate) === reportYear &&
+               inRange &&
                !!t.creditCardId;
     });
 
@@ -386,15 +396,23 @@ export default function FinancyCanvas() {
         ...card,
         total: spendingMap.get(card.id) || 0
     })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
-  }, [transactions, allCreditCards, reportMonth, reportYear]);
+  }, [transactions, allCreditCards, creditCardStartDate, creditCardEndDate]);
 
   const filteredCreditCardTransactions = useMemo(() => {
       let filtered = transactions.filter(t => {
           const transactionDate = t.data?.toDate();
           if (!transactionDate) return false;
+
+          let inRange = true;
+          if (creditCardStartDate) {
+              inRange = inRange && transactionDate >= startOfDay(creditCardStartDate);
+          }
+          if (creditCardEndDate) {
+              inRange = inRange && transactionDate <= endOfDay(creditCardEndDate);
+          }
+
           return t.tipo === 'despesa' && 
-                 getMonth(transactionDate) === reportMonth && 
-                 getYear(transactionDate) === reportYear &&
+                 inRange &&
                  !!t.creditCardId;
       });
 
@@ -407,7 +425,7 @@ export default function FinancyCanvas() {
       }
 
       return filtered;
-  }, [transactions, reportMonth, reportYear, creditCardFilter, reportSearchTerm]);
+  }, [transactions, creditCardStartDate, creditCardEndDate, creditCardFilter, reportSearchTerm]);
 
 
 
@@ -451,10 +469,10 @@ export default function FinancyCanvas() {
     setInstallmentTotalValue(inputValue);
   };
 
-  const handleGeneratePdf = useCallback((data: any[], title: string, columns: any[], footerText?: string) => {
+  const handleGeneratePdf = useCallback((data: any[], title: string, columns: any[], footerText?: string, customPeriod?: string) => {
     const doc = new jsPDF();
     const monthLabel = months.find(m => m.value === reportMonth)?.label;
-    const period = `${monthLabel} de ${reportYear}`.toUpperCase();
+    const period = customPeriod || `${monthLabel} de ${reportYear}`.toUpperCase();
 
     doc.setFontSize(18);
     doc.text(title, 14, 22);
@@ -1106,7 +1124,8 @@ setShowReportModal(true);
         ];
         const totalValue = filteredCreditCardTransactions.reduce((acc, item) => acc + item.valor, 0);
         const footer = `Total no Período: ${formatCurrency(totalValue)}`;
-        handleGeneratePdf(filteredCreditCardTransactions, pdfTitle, columns, footer);
+        const customPeriod = `${creditCardStartDate ? format(creditCardStartDate, 'dd/MM/yyyy') : ''} até ${creditCardEndDate ? format(creditCardEndDate, 'dd/MM/yyyy') : ''}`.toUpperCase();
+        handleGeneratePdf(filteredCreditCardTransactions, pdfTitle, columns, footer, customPeriod);
     };
 
     const periodTotal = filteredCreditCardTransactions.reduce((acc, t) => acc + t.valor, 0);
@@ -1123,14 +1142,28 @@ setShowReportModal(true);
                         </SelectContent>
                     </Select>
                     <div className="grid grid-cols-2 gap-2">
-                        <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
-                        </Select>
-                        <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
-                        </Select>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant={"outline"} className={cn("h-8 px-2 text-xs font-normal", !creditCardStartDate && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-1 h-3 w-3" />
+                                    {creditCardStartDate ? format(creditCardStartDate, "dd/MM/yy") : <span>De</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar mode="single" selected={creditCardStartDate} onSelect={setCreditCardStartDate} initialFocus locale={ptBR} />
+                            </PopoverContent>
+                        </Popover>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant={"outline"} className={cn("h-8 px-2 text-xs font-normal", !creditCardEndDate && "text-muted-foreground")}>
+                                    <CalendarIcon className="mr-1 h-3 w-3" />
+                                    {creditCardEndDate ? format(creditCardEndDate, "dd/MM/yy") : <span>Até</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar mode="single" selected={creditCardEndDate} onSelect={setCreditCardEndDate} initialFocus locale={ptBR} />
+                            </PopoverContent>
+                        </Popover>
                     </div>
                 </div>
                 
@@ -1570,14 +1603,28 @@ setShowReportModal(true);
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-sm font-bold text-foreground">Gastos por Cartão de Crédito</h3>
                             <div className="flex items-center gap-2">
-                                <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
-                                    <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
-                                    <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
-                                </Select>
-                                <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
-                                    <SelectTrigger className="w-20 h-8 text-xs"><SelectValue /></SelectTrigger>
-                                    <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
-                                </Select>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button variant={"outline"} className={cn("h-8 px-2 text-xs font-normal", !creditCardStartDate && "text-muted-foreground")}>
+                                            <CalendarIcon className="mr-1 h-3 w-3" />
+                                            {creditCardStartDate ? format(creditCardStartDate, "dd/MM/yy") : <span>De</span>}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0">
+                                        <Calendar mode="single" selected={creditCardStartDate} onSelect={setCreditCardStartDate} initialFocus locale={ptBR} />
+                                    </PopoverContent>
+                                </Popover>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button variant={"outline"} className={cn("h-8 px-2 text-xs font-normal", !creditCardEndDate && "text-muted-foreground")}>
+                                            <CalendarIcon className="mr-1 h-3 w-3" />
+                                            {creditCardEndDate ? format(creditCardEndDate, "dd/MM/yy") : <span>Até</span>}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0">
+                                        <Calendar mode="single" selected={creditCardEndDate} onSelect={setCreditCardEndDate} initialFocus locale={ptBR} />
+                                    </PopoverContent>
+                                </Popover>
                             </div>
                         </div>
                         {creditCardSpending.length > 0 ? (
