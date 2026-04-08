@@ -100,6 +100,7 @@ export default function FinancyCanvas() {
   const [selectedCreditCardId, setSelectedCreditCardId] = useState<string | null>(null);
   const [showCreditCardsModal, setShowCreditCardsModal] = useState(false);
   const [newCreditCardName, setNewCreditCardName] = useState('');
+  const [showResetBalanceDialog, setShowResetBalanceDialog] = useState(false);
   
   // State for installments
   const [installmentTotalValue, setInstallmentTotalValue] = useState('');
@@ -821,6 +822,33 @@ setShowReportModal(true);
     if (auth) signOutUser(auth);
   };
 
+  const handleResetBalance = () => {
+    if (!user || typeof balance !== 'number' || !firestore) return;
+    if (balance === 0) {
+      setShowResetBalanceDialog(false);
+      return;
+    }
+
+    const type = balance > 0 ? 'despesa' : 'receita';
+    const value = Math.abs(balance);
+
+    const transactionData: Partial<Omit<Transaction, 'id'>> = {
+        userId: user.uid,
+        descricao: 'Ajuste de Saldo',
+        valor: value,
+        tipo: type,
+        data: new Date() as any,
+        status: 'pago',
+        isParcela: false,
+        observacao: 'Ajuste automático para zerar o saldo.'
+    };
+
+    const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
+    addDocumentNonBlocking(userTransactionsCollection, transactionData);
+    toast({ title: "Saldo Zerado!", description: "Uma transação de ajuste foi criada." });
+    setShowResetBalanceDialog(false);
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-background">
@@ -1287,7 +1315,10 @@ setShowReportModal(true);
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
               <div className="flex-1">
                   <h1 className="text-2xl font-extrabold text-foreground flex items-center"><CreditCard className="w-6 h-6 mr-2 text-primary" />Minhas Finanças</h1>
-                  <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mt-4">Saldo Atual (Pago)</h2>
+                  <div className="flex items-center gap-3 mt-4">
+                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Saldo Atual (Pago)</h2>
+                      <Button variant="outline" size="sm" onClick={() => setShowResetBalanceDialog(true)} disabled={balance === 0} className="h-6 px-2 text-xs">Zerar Saldo</Button>
+                  </div>
                   <p className={`text-4xl font-bold mt-1 transition-colors duration-300 ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</p>
               </div>
               <div className="flex items-center space-x-2 self-start sm:self-center w-full sm:w-auto justify-end">
@@ -1696,6 +1727,21 @@ setShowReportModal(true);
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Você tem certeza?</AlertDialogTitle><AlertDialogDescription>Esta ação não pode ser desfeita. Isso excluirá permanentemente sua transação de nossos servidores.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel onClick={() => setTransactionToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleDeleteTransaction}>Excluir</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showResetBalanceDialog} onOpenChange={setShowResetBalanceDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Você deseja realmente zerar o saldo?</AlertDialogTitle>
+            <AlertDialogDescription>
+                Esta ação criará uma transação de ajuste automático (Entrada ou Saída) para que seu saldo atual fique em <strong>R$ 0,00</strong>. Nenhuma das suas transações anteriores será apagada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResetBalance}>Confirmar</AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
