@@ -1216,7 +1216,7 @@ setShowReportModal(true);
                     {filteredCreditCardTransactions.length > 0 ? (
                         <ul className="space-y-2">
                             {filteredCreditCardTransactions.map(t => (
-                                <li key={t.id} className="flex justify-between items-center p-3 bg-card border-l-4 border-blue-400 rounded-lg shadow-sm">
+                                <li key={t.id} className="group flex justify-between items-center p-3 bg-card border-l-4 border-blue-400 rounded-lg shadow-sm">
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm truncate">{t.descricao}</p>
                                         <div className="flex items-center gap-2 mt-1">
@@ -1227,7 +1227,17 @@ setShowReportModal(true);
                                             </span>
                                         </div>
                                     </div>
-                                    <p className="font-bold text-sm text-red-600 ml-4">{formatCurrency(t.valor)}</p>
+                                    <div className="flex items-center flex-shrink-0">
+                                        <p className="font-bold text-sm text-red-600 ml-4">{formatCurrency(t.valor)}</p>
+                                        {!t.isParcela && (
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 ml-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(t)}>
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id)}>
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
                                 </li>
                             ))}
                         </ul>
