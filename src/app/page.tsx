@@ -879,7 +879,7 @@ setShowReportModal(true);
         'despesas': "Relatório de Despesas",
         'receitas': "Relatório de Receitas",
         'parcelas': "Relatório de Parcelas",
-        'cartoes': "Gastos por Cartão"
+        'cartoes': "Gastos no Cartão / Fiado"
     };
     const colorMap: Record<string, string> = {
         'summary': "text-foreground",
@@ -1143,11 +1143,11 @@ setShowReportModal(true);
 
   const renderCreditCardsReport = () => {
     const handlePdfGeneration = () => {
-        const pdfTitle = "Relatório de Gastos por Cartão";
+        const pdfTitle = "Relatório de Gastos: Cartão / Fiado";
         const columns = [
             { header: 'Data', dataKey: (item: Transaction) => format(item.data.toDate(), 'dd/MM/yy HH:mm') },
             { header: 'Descrição', dataKey: (item: Transaction) => item.descricao },
-            { header: 'Cartão', dataKey: (item: Transaction) => item.creditCardId ? creditCardMap.get(item.creditCardId) || '' : '' },
+            { header: 'Cartão / Fiado', dataKey: (item: Transaction) => item.creditCardId ? creditCardMap.get(item.creditCardId) || '' : '' },
             { header: 'Valor', dataKey: (item: Transaction) => formatCurrency(item.valor) },
         ];
         const totalValue = filteredCreditCardTransactions.reduce((acc, item) => acc + item.valor, 0);
@@ -1163,9 +1163,9 @@ setShowReportModal(true);
             <div className="flex flex-col space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <Select value={creditCardFilter} onValueChange={setCreditCardFilter}>
-                        <SelectTrigger><SelectValue placeholder="Filtrar por cartão..." /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Filtrar por cartão ou fiado..." /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">Todos os Cartões</SelectItem>
+                            <SelectItem value="all">Todos os Cartões / Fiados</SelectItem>
                             {allCreditCards?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                         </SelectContent>
                     </Select>
@@ -1223,7 +1223,7 @@ setShowReportModal(true);
                                             <span className="text-[10px] text-muted-foreground">{format(t.data.toDate(), 'dd/MM/yyyy')}</span>
                                             <span className="text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full flex items-center">
                                                 <CreditCard className="w-2.5 h-2.5 mr-1" />
-                                                {creditCardMap.get(t.creditCardId!) || 'Cartão'}
+                                                {creditCardMap.get(t.creditCardId!) || 'Cartão/Fiado'}
                                             </span>
                                         </div>
                                     </div>
@@ -1243,7 +1243,7 @@ setShowReportModal(true);
                         </ul>
                     ) : (
                         <div className="text-center py-10 text-muted-foreground">
-                            <p>Nenhuma transação encontrada no cartão para este período.</p>
+                            <p>Nenhuma transação encontrada no cartão/fiado para este período.</p>
                         </div>
                     )}
                 </div>
@@ -1339,7 +1339,7 @@ setShowReportModal(true);
                       </span>
                   </div>
                   <ThemeToggleButton />
-                  <Button variant="ghost" size="icon" onClick={() => setShowCreditCardsModal(true)} title="Gerenciar Cartões"><CreditCard className="w-4 h-4" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => setShowCreditCardsModal(true)} title="Cartões e Fiados"><CreditCard className="w-4 h-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={handleLogout} title="Sair"><LogOut className="w-4 h-4" /></Button>
               </div>
           </div>
@@ -1459,10 +1459,10 @@ setShowReportModal(true);
             </div>
             {formType === 'despesa' && (
               <div>
-                <Label htmlFor="credit-card">Cartão de Crédito</Label>
+                <Label htmlFor="credit-card">Cartão de Crédito / Fiado</Label>
                 <div className="flex items-center space-x-2 mt-1">
                   <Select onValueChange={(value) => setSelectedCreditCardId(value === 'none' ? null : value)} value={selectedCreditCardId || 'none'}><SelectTrigger id="credit-card"><SelectValue placeholder="Pagamento em dinheiro/PIX" /></SelectTrigger><SelectContent><SelectItem value="none">Dinheiro / PIX (Debita do saldo)</SelectItem>{allCreditCards?.map((card) => <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>)}</SelectContent></Select>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setShowCreditCardsModal(true)}><CreditCard className="h-4 w-4" /><span className="sr-only">Gerenciar Cartões</span></Button>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setShowCreditCardsModal(true)}><CreditCard className="h-4 w-4" /><span className="sr-only">Gerenciar Cartões/Fiados</span></Button>
                 </div>
               </div>
             )}
@@ -1534,10 +1534,10 @@ setShowReportModal(true);
               </div>
             </div>
             <div>
-              <Label htmlFor="installment-credit-card">Cartão de Crédito</Label>
+              <Label htmlFor="installment-credit-card">Cartão de Crédito / Fiado</Label>
               <div className="flex items-center space-x-2 mt-1">
                 <Select onValueChange={(value) => setSelectedCreditCardId(value === 'none' ? null : value)} value={selectedCreditCardId || 'none'}><SelectTrigger id="installment-credit-card"><SelectValue placeholder="Pagamento em dinheiro/PIX" /></SelectTrigger><SelectContent><SelectItem value="none">Dinheiro / PIX (Debita do saldo)</SelectItem>{allCreditCards?.map((card) => <SelectItem key={card.id} value={card.id}>{card.name}</SelectItem>)}</SelectContent></Select>
-                <Button type="button" variant="outline" size="icon" onClick={() => setShowCreditCardsModal(true)}><CreditCard className="h-4 w-4" /><span className="sr-only">Gerenciar Cartões</span></Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => setShowCreditCardsModal(true)}><CreditCard className="h-4 w-4" /><span className="sr-only">Gerenciar Cartões/Fiados</span></Button>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -1609,7 +1609,7 @@ setShowReportModal(true);
                                     <Legend wrapperStyle={{ fontSize: '12px' }} />
                                     <Bar dataKey="totalReceitas" name="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
                                     <Bar dataKey="totalDespesas" name="Dinheiro" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="totalCartao" name="Cartão" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="totalCartao" name="Cartão / Fiado" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
@@ -1642,7 +1642,7 @@ setShowReportModal(true);
 
                     <div className="p-4 bg-muted/30 rounded-2xl border">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-sm font-bold text-foreground">Gastos por Cartão de Crédito</h3>
+                            <h3 className="text-sm font-bold text-foreground">Gastos no Cartão / Fiado</h3>
                             <div className="flex items-center gap-2">
                                 <Popover>
                                     <PopoverTrigger asChild>
@@ -1685,11 +1685,11 @@ setShowReportModal(true);
                                     className="w-full mt-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                     onClick={() => setReportView('cartoes')}
                                 >
-                                    Ver Detalhes por Cartão
+                                    Ver Detalhes
                                 </Button>
                             </div>
                         ) : (
-                            <p className="text-sm text-center py-6 text-muted-foreground italic">Nenhum gasto no cartão para este período.</p>
+                            <p className="text-sm text-center py-6 text-muted-foreground italic">Nenhum gasto no cartão/fiado para este período.</p>
                         )}
                     </div>
 
@@ -1710,12 +1710,12 @@ setShowReportModal(true);
       <Dialog open={showCreditCardsModal} onOpenChange={setShowCreditCardsModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Gerenciar Cartões de Crédito</DialogTitle>
-            <DialogDescription>Adicione ou remova cartões de crédito.</DialogDescription>
+            <DialogTitle>Cartões e Fiados</DialogTitle>
+            <DialogDescription>Gerencie seus cartões de crédito ou contas de fiado.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <form onSubmit={handleAddCreditCard} className="flex gap-2">
-              <Input placeholder="Nome do cartão (ex: Nubank)" value={newCreditCardName} onChange={(e) => setNewCreditCardName(e.target.value)} />
+              <Input placeholder="Nome (ex: Nubank, Fiado do Zé)" value={newCreditCardName} onChange={(e) => setNewCreditCardName(e.target.value)} />
               <Button type="submit" size="icon"><PlusCircle className="h-4 w-4" /></Button>
             </form>
             <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
@@ -1724,7 +1724,7 @@ setShowReportModal(true);
                   <span className="text-sm font-medium">{card.name}</span>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteCreditCard(card.id)}><Trash2 className="h-4 w-4" /></Button>
                 </div>
-              )) : <p className="text-center py-4 text-sm text-muted-foreground">Nenhum cartão cadastrado.</p>}
+              )) : <p className="text-center py-4 text-sm text-muted-foreground">Nenhum registro cadastrado.</p>}
             </div>
           </div>
           <DialogFooter>
