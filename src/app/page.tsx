@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, FilterX, FileText, Eye, FileDown } from 'lucide-react';
-import type { Transaction, Group, PredefinedDescription, CreditCard } from '@/lib/types';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, Filter, FilterX, FileText, Eye, FileDown } from 'lucide-react';
+import type { Transaction, Group, PredefinedDescription, CreditCard as CreditCardType } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
 import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth, endOfMonth, startOfDay, endOfDay } from 'date-fns';
@@ -71,7 +71,7 @@ export default function FinancyCanvas() {
     return query(collection(firestore, 'users', user.uid, 'creditCards'));
   }, [firestore, user]);
 
-  const { data: allCreditCards, isLoading: isLoadingCreditCards } = useCollection<CreditCard>(creditCardsQuery);
+  const { data: allCreditCards, isLoading: isLoadingCreditCards } = useCollection<CreditCardType>(creditCardsQuery);
 
 
   const [error, setError] = useState('');
@@ -123,6 +123,12 @@ export default function FinancyCanvas() {
   const [creditCardFilter, setCreditCardFilter] = useState<string>('all');
   const [creditCardStartDate, setCreditCardStartDate] = useState<Date | undefined>(startOfMonth(new Date()));
   const [creditCardEndDate, setCreditCardEndDate] = useState<Date | undefined>(endOfMonth(new Date()));
+
+  // State for monthly overview filtering
+  const [showMonthlyFilters, setShowMonthlyFilters] = useState(false);
+  const [monthlyFilterStartDate, setMonthlyFilterStartDate] = useState<Date | undefined>(undefined);
+  const [monthlyFilterEndDate, setMonthlyFilterEndDate] = useState<Date | undefined>(undefined);
+  const [monthlyFilterType, setMonthlyFilterType] = useState<'all' | 'receita' | 'despesa'>('all');
 
   const groupMap = useMemo(() => {
     if (!allGroups) return new Map();
@@ -218,7 +224,26 @@ export default function FinancyCanvas() {
     const grouped: { [key: string]: { monthLabel: string; transactions: Transaction[]; totalReceitas: number; totalDespesas: number; totalCartao: number; }} = {};
     const paidTransactions = transactions.filter(t => t.status === 'pago');
 
-    paidTransactions.forEach(t => {
+    const filteredPaid = paidTransactions.filter(t => {
+      const transactionDate = t.data?.toDate();
+      if (!transactionDate) return false;
+
+      if (monthlyFilterType !== 'all' && t.tipo !== monthlyFilterType) {
+        return false;
+      }
+
+      if (monthlyFilterStartDate && transactionDate < startOfDay(monthlyFilterStartDate)) {
+        return false;
+      }
+
+      if (monthlyFilterEndDate && transactionDate > endOfDay(monthlyFilterEndDate)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    filteredPaid.forEach(t => {
       const transactionDate = t.data?.toDate();
       if (!transactionDate) return;
 
@@ -250,7 +275,11 @@ export default function FinancyCanvas() {
       ...grouped[key],
       saldo: grouped[key].totalReceitas - grouped[key].totalDespesas
     }));
-  }, [transactions]);
+  }, [transactions, monthlyFilterStartDate, monthlyFilterEndDate, monthlyFilterType]);
+
+  const hasActiveFilters = useMemo(() => {
+    return monthlyFilterStartDate !== undefined || monthlyFilterEndDate !== undefined || monthlyFilterType !== 'all';
+  }, [monthlyFilterStartDate, monthlyFilterEndDate, monthlyFilterType]);
   
   const pieChartData = useMemo(() => {
     if (!transactions) return [];
@@ -1353,9 +1382,97 @@ setShowReportModal(true);
         </div>
 
         <Card className="shadow-xl">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div><CardTitle>Visão Geral Mensal</CardTitle><CardDescription>Lançamentos pagos, agrupados por mês.</CardDescription></div>
-            <Button variant="ghost" size="sm" onClick={() => openReport('all')}><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Ver relatório completo</span></Button>
+          <CardHeader className="space-y-4">
+            <div className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Visão Geral Mensal</CardTitle>
+                <CardDescription>Lançamentos pagos, agrupados por mês.</CardDescription>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button 
+                  variant={hasActiveFilters ? "secondary" : "ghost"} 
+                  size="sm" 
+                  onClick={() => setShowMonthlyFilters(!showMonthlyFilters)}
+                  title="Filtrar lançamentos"
+                  className={cn("h-8 px-2 text-xs", hasActiveFilters && "text-primary font-semibold border-primary/20")}
+                >
+                  <Filter className="h-4 w-4 mr-1" />
+                  Filtrar
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => openReport('all')} title="Ver relatório completo">
+                  <MoreHorizontal className="h-4 w-4" />
+                  <span className="sr-only">Ver relatório completo</span>
+                </Button>
+              </div>
+            </div>
+
+            {showMonthlyFilters && (
+              <div className="p-4 bg-muted/30 rounded-xl border border-muted/50 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-muted-foreground">Tipo de Lançamento</Label>
+                    <Select value={monthlyFilterType} onValueChange={(val: 'all' | 'receita' | 'despesa') => setMonthlyFilterType(val)}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Selecione o tipo..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os Lançamentos</SelectItem>
+                        <SelectItem value="receita">Apenas Entradas (Receitas)</SelectItem>
+                        <SelectItem value="despesa">Apenas Saídas (Despesas)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-muted-foreground">Data Inicial</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className={cn("w-full h-9 justify-start text-left font-normal text-xs sm:text-sm", !monthlyFilterStartDate && "text-muted-foreground")}>
+                          <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                          {monthlyFilterStartDate ? format(monthlyFilterStartDate, "dd/MM/yyyy") : <span>De</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar mode="single" selected={monthlyFilterStartDate} onSelect={setMonthlyFilterStartDate} initialFocus locale={ptBR} />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-muted-foreground">Data Final</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className={cn("w-full h-9 justify-start text-left font-normal text-xs sm:text-sm", !monthlyFilterEndDate && "text-muted-foreground")}>
+                          <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                          {monthlyFilterEndDate ? format(monthlyFilterEndDate, "dd/MM/yyyy") : <span>Até</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar mode="single" selected={monthlyFilterEndDate} onSelect={setMonthlyFilterEndDate} initialFocus locale={ptBR} />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+
+                {hasActiveFilters && (
+                  <div className="flex justify-end gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setMonthlyFilterStartDate(undefined);
+                        setMonthlyFilterEndDate(undefined);
+                        setMonthlyFilterType('all');
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground h-8"
+                    >
+                      <FilterX className="w-3.5 h-3.5 mr-1" />
+                      Limpar Filtros
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-6">
             {monthlyData.length === 0 ? (
