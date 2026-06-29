@@ -1,8 +1,8 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, Filter, FilterX, FileText, Eye, FileDown } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, Filter, FilterX, FileText, Eye, FileDown, Sparkles } from 'lucide-react';
 import type { Transaction, Group, PredefinedDescription, CreditCard as CreditCardType } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
@@ -101,6 +101,9 @@ export default function FinancyCanvas() {
   const [showCreditCardsModal, setShowCreditCardsModal] = useState(false);
   const [newCreditCardName, setNewCreditCardName] = useState('');
   const [showResetBalanceDialog, setShowResetBalanceDialog] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiSuggestedCategory, setAiSuggestedCategory] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State for installments
   const [installmentTotalValue, setInstallmentTotalValue] = useState('');
@@ -757,6 +760,100 @@ export default function FinancyCanvas() {
     deleteDocumentNonBlocking(cardRef);
   };
 
+  const handlePixClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = '';
+    setIsAnalyzing(true);
+    setAiSuggestedCategory(null);
+
+    try {
+      const { base64Data, contentType } = await new Promise<{ base64Data: string, contentType: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64String = reader.result as string;
+          const base64Data = base64String.split(',')[1];
+          resolve({ base64Data, contentType: file.type });
+        };
+        reader.onerror = () => reject(new Error('Erro ao ler o arquivo.'));
+        reader.readAsDataURL(file);
+      });
+
+      const groupsToSend = (allGroups || []).map(g => ({
+        id: g.id,
+        name: g.name,
+        tipo: g.tipo
+      }));
+
+      const response = await fetch('/api/analyze-receipt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileBase64: base64Data,
+          fileType: contentType,
+          groups: groupsToSend,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erro ao analisar o comprovante.');
+      }
+
+      const result = await response.json();
+      
+      setTransactionToEdit(null);
+      setFormType(result.tipo);
+      setDescription(result.descricao);
+      setValue(result.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      
+      if (result.data) {
+        const parsedDate = new Date(result.data + 'T12:00:00');
+        if (isValid(parsedDate)) {
+          setDate(parsedDate);
+        } else {
+          setDate(new Date());
+        }
+      } else {
+        setDate(new Date());
+      }
+      
+      setSelectedGroupId(result.sugestaoGrupoId || null);
+      setSelectedCreditCardId(null);
+      
+      let finalObservation = result.observacao || '';
+      if (result.categoriaSugerida && !result.sugestaoGrupoId) {
+        setAiSuggestedCategory(result.categoriaSugerida);
+        finalObservation = `[Categoria sugerida pela AI: ${result.categoriaSugerida}] ${finalObservation}`.trim();
+      }
+      setObservation(finalObservation);
+
+      setShowModal(true);
+      
+      toast({
+        title: "Comprovante analisado!",
+        description: "Os dados foram preenchidos automaticamente. Por favor, revise-os.",
+      });
+
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        variant: "destructive",
+        title: "Erro na análise",
+        description: err.message || "Não foi possível analisar o comprovante Pix.",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const resetAndCloseModal = () => {
     setDescription(''); 
     setValue(''); 
@@ -769,7 +866,8 @@ export default function FinancyCanvas() {
     setShowModal(false); 
     setError(''); 
     setIsSubmitting(false);
-  }
+    setAiSuggestedCategory(null);
+  };
   
   const resetAndCloseInstallmentModal = () => {
     setDescription('');
@@ -1374,11 +1472,32 @@ setShowReportModal(true);
           </div>
         </header>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-8">
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handleFileChange} 
+          accept="image/*,application/pdf" 
+          className="hidden" 
+        />
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-8">
           <Button onClick={() => openModalForNew('receita')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Entradas</Button>
           <Button onClick={() => openModalForNew('despesa')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Saídas</Button>
           <Button onClick={openInstallmentModal} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Parcelados</Button>
           <Button onClick={() => openReport('summary')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><FileText className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Relatórios</Button>
+          <Button onClick={handlePixClick} disabled={isAnalyzing} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105 col-span-2 md:col-span-1 lg:col-span-1">
+            {isAnalyzing ? (
+              <>
+                <Loader className="w-4 h-4 sm:w-5 sm:h-5 mr-2 animate-spin" />
+                Analisando...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                Analisar Pix
+              </>
+            )}
+          </Button>
         </div>
 
         <Card className="shadow-xl">
@@ -1573,6 +1692,12 @@ setShowReportModal(true);
                 <Select onValueChange={(value) => setSelectedGroupId(value === 'none' ? null : value)} value={selectedGroupId || 'none'}><SelectTrigger id="group"><SelectValue placeholder="Selecione um grupo (opcional)" /></SelectTrigger><SelectContent><SelectItem value="none">Nenhum grupo</SelectItem>{groupsForForm.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent></Select>
                 <Button type="button" variant="outline" size="icon" onClick={() => setShowGroupsModal(true)}><Settings className="h-4 w-4" /><span className="sr-only">Gerenciar Grupos</span></Button>
               </div>
+              {aiSuggestedCategory && !selectedGroupId && (
+                <p className="text-xs text-violet-600 dark:text-violet-400 mt-1.5 flex items-center gap-1 font-medium animate-pulse">
+                  <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                  Sugestão da AI: <strong>{aiSuggestedCategory}</strong> (selecione um grupo compatível ou crie um novo).
+                </p>
+              )}
             </div>
             {formType === 'despesa' && (
               <div>
