@@ -6,7 +6,7 @@ import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart,
 import type { Transaction, Group, PredefinedDescription, CreditCard as CreditCardType } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
 import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
-import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth, endOfMonth, startOfDay, endOfDay } from 'date-fns';
+import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth, endOfMonth, startOfDay, endOfDay, isWithinInterval, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -35,11 +35,15 @@ declare module 'jspdf' {
   }
 }
 
+import C6Sync from '@/components/C6Sync';
+
 export default function FinancyCanvas() {
   const { firestore, auth } = useFirebase();
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
+  const [showC6Sync, setShowC6Sync] = useState(false);
+
   useEffect(() => {
     if (!isUserLoading && !user) {
       window.location.href = '/login';
@@ -83,7 +87,7 @@ export default function FinancyCanvas() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [showGroupsModal, setShowGroupsModal] = useState(false);
   const [showDescriptionsModal, setShowDescriptionsModal] = useState(false);
-  const [reportView, setReportView] = useState<'summary' | 'all' | 'despesas' | 'receitas' | 'parcelas' | 'cartoes'>('summary');
+  const [reportView, setReportView] = useState<'summary' | 'all' | 'despesas' | 'receitas' | 'parcelas' | 'cartoes' | 'weekly'>('summary');
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
   const [installmentToDelete, setInstallmentToDelete] = useState<Transaction | null>(null);
@@ -111,8 +115,9 @@ export default function FinancyCanvas() {
 
   // State for report filtering
   const [reportSearchTerm, setReportSearchTerm] = useState('');
-  const [reportMonth, setReportMonth] = useState<number>(getMonth(new Date()));
-  const [reportYear, setReportYear] = useState<number>(getYear(new Date()));
+  const [reportStartDate, setReportStartDate] = useState<Date | undefined>(startOfMonth(new Date()));
+  const [reportEndDate, setReportEndDate] = useState<Date | undefined>(endOfMonth(new Date()));
+  const [pieChartYear, setPieChartYear] = useState<number>(getYear(new Date()));
   
   // State for installment report filtering
   const [installmentGroupFilter, setInstallmentGroupFilter] = useState<string>('all');
@@ -286,7 +291,7 @@ export default function FinancyCanvas() {
   
   const pieChartData = useMemo(() => {
     if (!transactions) return [];
-    const expenses = transactions.filter(t => t.tipo === 'despesa' && t.status === 'pago' && t.data && getYear(t.data.toDate()) === reportYear);
+    const expenses = transactions.filter(t => t.tipo === 'despesa' && t.status === 'pago' && t.data && getYear(t.data.toDate()) === pieChartYear);
     const grouped = expenses.reduce((acc, current) => {
         const groupName = current.groupId ? (groupMap.get(current.groupId) || 'Outros') : 'Outros';
         if (!acc[groupName]) {
@@ -300,11 +305,11 @@ export default function FinancyCanvas() {
         name,
         value: grouped[name]
     })).sort((a,b) => b.value - a.value);
-  }, [transactions, groupMap, reportYear]);
+  }, [transactions, groupMap, pieChartYear]);
   
   const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b', '#84cc16'];
   
-  const filterTransactionsByPeriod = useCallback(<T extends Transaction>(items: T[], month: number, year: number, searchTerm: string) => {
+  const filterTransactionsByPeriod = useCallback(<T extends Transaction>(items: T[], startDate: Date | undefined, endDate: Date | undefined, searchTerm: string) => {
       let filtered = items;
 
       if (searchTerm) {
@@ -314,18 +319,20 @@ export default function FinancyCanvas() {
       filtered = filtered.filter(d => {
           const transactionDate = d.data?.toDate();
           if (!transactionDate) return false;
-          return getMonth(transactionDate) === month && getYear(transactionDate) === year;
+          if (startDate && transactionDate < startOfDay(startDate)) return false;
+          if (endDate && transactionDate > endOfDay(endDate)) return false;
+          return true;
       });
 
       return filtered;
   }, []);
   
   const filteredAllTransactions = useMemo(() => {
-    return filterTransactionsByPeriod(transactions, reportMonth, reportYear, reportSearchTerm);
-  }, [transactions, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
+    return filterTransactionsByPeriod(transactions, reportStartDate, reportEndDate, reportSearchTerm);
+  }, [transactions, reportStartDate, reportEndDate, reportSearchTerm, filterTransactionsByPeriod]);
 
   const filteredDespesas = useMemo(() => {
-    let filtered = filterTransactionsByPeriod(despesas, reportMonth, reportYear, reportSearchTerm);
+    let filtered = filterTransactionsByPeriod(despesas, reportStartDate, reportEndDate, reportSearchTerm);
 
     if (expenseGroupFilter !== 'all') {
       filtered = filtered.filter(item => (item.groupId || 'none') === expenseGroupFilter);
@@ -337,11 +344,11 @@ export default function FinancyCanvas() {
     }
 
     return filtered;
-  }, [despesas, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod, expenseGroupFilter, expenseNameFilter]);
+  }, [despesas, reportStartDate, reportEndDate, reportSearchTerm, filterTransactionsByPeriod, expenseGroupFilter, expenseNameFilter]);
 
   const filteredReceitas = useMemo(() => {
-    return filterTransactionsByPeriod(receitas, reportMonth, reportYear, reportSearchTerm);
-  }, [receitas, reportMonth, reportYear, reportSearchTerm, filterTransactionsByPeriod]);
+    return filterTransactionsByPeriod(receitas, reportStartDate, reportEndDate, reportSearchTerm);
+  }, [receitas, reportStartDate, reportEndDate, reportSearchTerm, filterTransactionsByPeriod]);
 
   const uniqueInstallmentPurchases = useMemo(() => {
     const purchaseMap = new Map<string, Transaction>();
@@ -368,18 +375,20 @@ export default function FinancyCanvas() {
         filtered = filtered.filter(item => item.descricao.toLowerCase().includes(reportSearchTerm.toLowerCase()));
     }
     
-    // We filter by date by checking if *any* installment of that purchase falls within the month/year
+    // We filter by date by checking if *any* installment of that purchase falls within the range
     filtered = filtered.filter(purchase => {
       const allInstallmentsOfPurchase = installments.filter(i => i.parcelaId === purchase.parcelaId);
       return allInstallmentsOfPurchase.some(inst => {
           const transactionDate = inst.data?.toDate();
           if (!transactionDate) return false;
-          return getMonth(transactionDate) === reportMonth && getYear(transactionDate) === reportYear;
+          if (reportStartDate && transactionDate < startOfDay(reportStartDate)) return false;
+          if (reportEndDate && transactionDate > endOfDay(reportEndDate)) return false;
+          return true;
       });
     });
 
     return filtered;
-  }, [uniqueInstallmentPurchases, installments, reportMonth, reportYear, reportSearchTerm, installmentGroupFilter, installmentNameFilter]);
+  }, [uniqueInstallmentPurchases, installments, reportStartDate, reportEndDate, reportSearchTerm, installmentGroupFilter, installmentNameFilter]);
   
   const monthlyInstallmentsTotal = useMemo(() => {
     if (!installments) return 0;
@@ -387,11 +396,13 @@ export default function FinancyCanvas() {
     const monthlyInstallments = installments.filter(inst => {
         const transactionDate = inst.data?.toDate();
         if (!transactionDate) return false;
-        return getMonth(transactionDate) === reportMonth && getYear(transactionDate) === reportYear;
+        if (reportStartDate && transactionDate < startOfDay(reportStartDate)) return false;
+        if (reportEndDate && transactionDate > endOfDay(reportEndDate)) return false;
+        return true;
     });
 
     return monthlyInstallments.reduce((acc, inst) => acc + inst.valor, 0);
-  }, [installments, reportMonth, reportYear]);
+  }, [installments, reportStartDate, reportEndDate]);
 
   const allInstallmentsForSelectedPurchase = useMemo(() => {
     if (!installmentToView?.parcelaId) return [];
@@ -504,8 +515,8 @@ export default function FinancyCanvas() {
 
   const handleGeneratePdf = useCallback((data: any[], title: string, columns: any[], footerText?: string, customPeriod?: string) => {
     const doc = new jsPDF();
-    const monthLabel = months.find(m => m.value === reportMonth)?.label;
-    const period = customPeriod || `${monthLabel} de ${reportYear}`.toUpperCase();
+    const periodString = reportStartDate && reportEndDate ? `${format(reportStartDate, 'dd/MM/yyyy')} a ${format(reportEndDate, 'dd/MM/yyyy')}` : '';
+    const period = customPeriod || `${periodString}`.toUpperCase();
 
     doc.setFontSize(18);
     doc.text(title, 14, 22);
@@ -530,8 +541,8 @@ export default function FinancyCanvas() {
       doc.text(footerText, 14, finalY + 10);
     }
     
-    doc.save(`${title.toLowerCase().replace(/ /g, '_')}_${period.toLowerCase()}.pdf`);
-  }, [months, reportMonth, reportYear]);
+    doc.save(`${title.toLowerCase().replace(/ /g, '_')}_${period.toLowerCase().replace(/\//g, '-')}.pdf`);
+  }, [reportStartDate, reportEndDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -919,8 +930,8 @@ export default function FinancyCanvas() {
   }
 
   const openReport = (view: typeof reportView = 'summary') => {
-    setReportMonth(getMonth(new Date()));
-    setReportYear(getYear(new Date()));
+    setReportStartDate(startOfMonth(new Date()));
+    setReportEndDate(endOfMonth(new Date()));
     setReportView(view);
 setShowReportModal(true);
   };
@@ -1006,7 +1017,8 @@ setShowReportModal(true);
         'despesas': "Relatório de Despesas",
         'receitas': "Relatório de Receitas",
         'parcelas': "Relatório de Parcelas",
-        'cartoes': "Gastos no Cartão / Fiado"
+        'cartoes': "Gastos no Cartão / Fiado",
+        'weekly': "Avaliação Semanal"
     };
     const colorMap: Record<string, string> = {
         'summary': "text-foreground",
@@ -1014,7 +1026,8 @@ setShowReportModal(true);
         'despesas': "text-red-500",
         'receitas': "text-emerald-500",
         'parcelas': "text-sky-500",
-        'cartoes': "text-blue-500"
+        'cartoes': "text-blue-500",
+        'weekly': "text-fuchsia-500"
     };
     const title = titleMap[reportView];
     const color = colorMap[reportView];
@@ -1080,20 +1093,38 @@ setShowReportModal(true);
                  </>
               )}
                 <div className="grid grid-cols-2 gap-2">
-                    <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <div className="space-y-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className={cn("w-full h-9 justify-start text-left font-normal text-xs sm:text-sm", !reportStartDate && "text-muted-foreground")}>
+                            <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                            {reportStartDate ? format(reportStartDate, 'dd/MM/yyyy') : <span>Data Inicial</span>}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar mode="single" selected={reportStartDate} onSelect={setReportStartDate} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <div className="space-y-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className={cn("w-full h-9 justify-start text-left font-normal text-xs sm:text-sm", !reportEndDate && "text-muted-foreground")}>
+                            <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                            {reportEndDate ? format(reportEndDate, 'dd/MM/yyyy') : <span>Data Final</span>}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar mode="single" selected={reportEndDate} onSelect={setReportEndDate} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                 </div>
                  <Button 
                     variant="link" 
                     size="sm" 
                     className="text-primary self-start -mt-2" 
-                    onClick={() => { setReportMonth(getMonth(new Date())); setReportYear(getYear(new Date())); }}>
+                    onClick={() => { setReportStartDate(startOfMonth(new Date())); setReportEndDate(endOfMonth(new Date())); }}>
                     Ir para o mês atual
                 </Button>
                 <div className="relative">
@@ -1210,20 +1241,38 @@ setShowReportModal(true);
                     </Button>
                 )}
                  <div className="grid grid-cols-2 gap-2">
-                    <Select value={String(reportMonth)} onValueChange={(v) => setReportMonth(Number(v))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <div className="space-y-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className={cn("w-full h-9 justify-start text-left font-normal text-xs sm:text-sm", !reportStartDate && "text-muted-foreground")}>
+                            <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                            {reportStartDate ? format(reportStartDate, 'dd/MM/yyyy') : <span>Data Inicial</span>}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar mode="single" selected={reportStartDate} onSelect={setReportStartDate} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <div className="space-y-1">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className={cn("w-full h-9 justify-start text-left font-normal text-xs sm:text-sm", !reportEndDate && "text-muted-foreground")}>
+                            <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                            {reportEndDate ? format(reportEndDate, 'dd/MM/yyyy') : <span>Data Final</span>}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar mode="single" selected={reportEndDate} onSelect={setReportEndDate} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                 </div>
                  <Button 
                     variant="link" 
                     size="sm" 
                     className="text-primary self-start -mt-2" 
-                    onClick={() => { setReportMonth(getMonth(new Date())); setReportYear(getYear(new Date())); }}>
+                    onClick={() => { setReportStartDate(startOfMonth(new Date())); setReportEndDate(endOfMonth(new Date())); }}>
                     Ir para o mês atual
                 </Button>
 
@@ -1379,6 +1428,100 @@ setShowReportModal(true);
     );
   };
 
+  const renderWeeklyEvaluation = () => {
+      const essentialKeywords = ['água', 'agua', 'luz', 'energia', 'internet', 'telefone', 'celular', 'aluguel', 'condomínio', 'condominio', 'iptu', 'gás', 'gas'];
+      
+      const today = endOfDay(new Date());
+      const lastWeek = startOfDay(subDays(new Date(), 6));
+
+      const recentExpenses = transactions.filter(t => {
+          if (t.tipo !== 'despesa' || t.status !== 'pago') return false;
+          const tDate = t.data?.toDate();
+          if (!tDate) return false;
+          if (tDate < lastWeek || tDate > today) return false;
+          
+          const desc = t.descricao.toLowerCase();
+          return !essentialKeywords.some(keyword => desc.includes(keyword));
+      });
+
+      const groupedExpenses = recentExpenses.reduce((acc, t) => {
+          const name = t.descricao.trim();
+          const key = name.toLowerCase();
+          if (!acc[key]) {
+              acc[key] = { name: name, valor: 0, count: 0 };
+          }
+          acc[key].valor += t.valor;
+          acc[key].count += 1;
+          return acc;
+      }, {} as Record<string, { name: string, valor: number, count: number }>);
+
+      const sortedExpenses = Object.values(groupedExpenses)
+          .sort((a, b) => b.valor - a.valor)
+          .slice(0, 10);
+
+      const totalSpent = sortedExpenses.reduce((acc, curr) => acc + curr.valor, 0);
+
+      const handlePdfGeneration = () => {
+        const pdfTitle = "Avaliação Semanal: Maiores Gastos";
+        const columns = [
+            { header: 'Descrição', dataKey: (item: any) => item.name },
+            { header: 'Qtd. de Vezes', dataKey: (item: any) => item.count.toString() },
+            { header: 'Valor Total', dataKey: (item: any) => formatCurrency(item.valor) },
+        ];
+        const footer = `Total dos Maiores Gastos: ${formatCurrency(totalSpent)}`;
+        const customPeriod = `${format(lastWeek, 'dd/MM/yyyy')} até ${format(today, 'dd/MM/yyyy')}`;
+        handleGeneratePdf(sortedExpenses, pdfTitle, columns, footer, customPeriod);
+      };
+
+      return (
+        <div className="py-4 pr-2">
+            <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg mb-4">
+                <div className="flex flex-col">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">Total do Top 10</span>
+                    <span className="font-bold text-lg text-fuchsia-600">{formatCurrency(totalSpent)}</span>
+                </div>
+                <Button variant="outline" size="sm" onClick={handlePdfGeneration} disabled={sortedExpenses.length === 0}>
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Gerar PDF
+                </Button>
+            </div>
+            
+            <div className="mb-2">
+                <p className="text-sm text-muted-foreground">
+                    Análise dos últimos 7 dias (descartando contas de sobrevivência como água, luz, etc).
+                </p>
+            </div>
+
+            <div className="max-h-[45vh] overflow-y-auto pr-2">
+                {sortedExpenses.length > 0 ? (
+                    <ul className="space-y-3">
+                        {sortedExpenses.map((item, index) => (
+                            <li key={index} className="group flex justify-between items-center p-3 bg-card border-l-4 border-fuchsia-400 rounded-lg shadow-sm">
+                                <div className="flex items-center">
+                                    <div className="mr-4 w-6 text-center font-bold text-fuchsia-300 text-lg">
+                                        #{index + 1}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm truncate">{item.name}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-0.5">{item.count} {item.count > 1 ? 'lançamentos' : 'lançamento'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center flex-shrink-0">
+                                    <p className="font-bold text-sm text-red-600 ml-4">{formatCurrency(item.valor)}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <div className="text-center py-10 text-muted-foreground">
+                        <p>Nenhum gasto não essencial encontrado nos últimos 7 dias. Parabéns!</p>
+                    </div>
+                )}
+            </div>
+        </div>
+      );
+  };
+
   const renderInstallmentDetailModal = () => {
     if (!installmentToView) return null;
     const installments = allInstallmentsForSelectedPurchase;
@@ -1480,12 +1623,12 @@ setShowReportModal(true);
           className="hidden" 
         />
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-8">
           <Button onClick={() => openModalForNew('receita')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowUp className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Entradas</Button>
           <Button onClick={() => openModalForNew('despesa')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Saídas</Button>
           <Button onClick={openInstallmentModal} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-sky-500 hover:bg-sky-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Parcelados</Button>
           <Button onClick={() => openReport('summary')} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><FileText className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Relatórios</Button>
-          <Button onClick={handlePixClick} disabled={isAnalyzing} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105 col-span-2 md:col-span-1 lg:col-span-1">
+          <Button onClick={handlePixClick} disabled={isAnalyzing} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105">
             {isAnalyzing ? (
               <>
                 <Loader className="w-4 h-4 sm:w-5 sm:h-5 mr-2 animate-spin" />
@@ -1498,7 +1641,10 @@ setShowReportModal(true);
               </>
             )}
           </Button>
+          <Button onClick={() => setShowC6Sync(true)} className="h-auto py-4 sm:py-6 text-xs sm:text-sm bg-gray-800 hover:bg-gray-900 text-white font-semibold rounded-xl shadow-lg transition transform hover:scale-105"><Sparkles className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />Meu Banco</Button>
         </div>
+
+        {showC6Sync && <C6Sync onClose={() => setShowC6Sync(false)} />}
 
         <Card className="shadow-xl">
           <CardHeader className="space-y-4">
@@ -1835,6 +1981,7 @@ setShowReportModal(true);
                       <div className="flex flex-col p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors" onClick={() => setReportView('receitas')}><span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase">Receitas</span><span className="font-bold text-lg text-emerald-600 dark:text-emerald-400 truncate" title={formatCurrency(totalReceitas)}>{formatCurrency(totalReceitas)}</span></div>
                       <div className="flex flex-col p-3 bg-red-50 dark:bg-red-900/30 rounded-xl cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors" onClick={() => setReportView('despesas')}><span className="text-xs font-semibold text-red-700 dark:text-red-300 uppercase">Despesas</span><span className="font-bold text-lg text-red-600 dark:text-red-400 truncate" title={formatCurrency(totalDespesas)}>{formatCurrency(totalDespesas)}</span></div>
                       <div className="flex flex-col p-3 bg-sky-50 dark:bg-sky-900/30 rounded-xl cursor-pointer hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors" onClick={() => setReportView('parcelas')}><span className="text-xs font-semibold text-sky-700 dark:text-sky-300 uppercase">Parcelados</span><span className="font-bold text-lg text-sky-600 dark:text-sky-400">{uniqueInstallmentPurchases.length} compras</span></div>
+                      <div className="flex flex-col p-3 bg-fuchsia-50 dark:bg-fuchsia-900/30 rounded-xl cursor-pointer hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/40 transition-colors" onClick={() => setReportView('weekly')}><span className="text-xs font-semibold text-fuchsia-700 dark:text-fuchsia-300 uppercase">Semanal</span><span className="font-bold text-lg text-fuchsia-600 dark:text-fuchsia-400">Avaliação</span></div>
                     </div>
                     
                     <div className="p-4 bg-muted/30 rounded-2xl border">
@@ -1860,7 +2007,7 @@ setShowReportModal(true);
                     <div className="p-4 bg-muted/30 rounded-2xl border">
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="text-sm font-bold text-foreground">Despesas por Categoria</h3>
-                        <Select value={String(reportYear)} onValueChange={(v) => setReportYear(Number(v))}>
+                        <Select value={String(pieChartYear)} onValueChange={(v) => setPieChartYear(Number(v))}>
                             <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>{uniqueYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
                         </Select>
@@ -1942,6 +2089,7 @@ setShowReportModal(true);
             {reportView === 'receitas' && renderGenericReport(filteredReceitas, 'receita')}
             {reportView === 'parcelas' && renderInstallmentsReport()}
             {reportView === 'cartoes' && renderCreditCardsReport()}
+            {reportView === 'weekly' && renderWeeklyEvaluation()}
             <DialogFooter>{reportView !== 'summary' ? <Button onClick={() => setReportView('summary')} variant="outline">Voltar ao Resumo</Button> : <Button onClick={handleCloseReportModal} variant="outline">Fechar</Button>}</DialogFooter>
         </DialogContent>
       </Dialog>
