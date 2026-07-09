@@ -67,6 +67,7 @@ export default function LoginPage() {
 
 
   const handleAuthError = (error: any) => {
+    console.error("Auth Error:", error);
     let friendlyMessage = "Ocorreu um erro durante a autenticação. Por favor, tente novamente.";
     if (error?.message?.includes("auth/user-not-found") || error?.message?.includes("auth/invalid-credential")) {
         friendlyMessage = "E-mail ou senha incorretos.";
@@ -76,6 +77,10 @@ export default function LoginPage() {
         friendlyMessage = "Este e-mail já está em uso por outra conta.";
     } else if (error?.message?.includes("auth/popup-closed-by-user")) {
         friendlyMessage = "O login foi cancelado.";
+    } else if (error?.message?.includes("auth/operation-not-allowed")) {
+        friendlyMessage = "O login com Google não foi ativado no Firebase Console.";
+    } else if (error?.message) {
+        friendlyMessage = `Erro: ${error.message}`;
     }
     setAuthError(friendlyMessage);
     setIsSubmitting(false);
