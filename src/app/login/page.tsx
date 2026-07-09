@@ -79,6 +79,8 @@ export default function LoginPage() {
         friendlyMessage = "O login foi cancelado.";
     } else if (error?.message?.includes("auth/operation-not-allowed")) {
         friendlyMessage = "O login com Google não foi ativado no Firebase Console.";
+    } else if (error?.message?.includes("auth/unauthorized-domain")) {
+        friendlyMessage = "O domínio atual (localhost) não está autorizado no Firebase. Vá no painel do Firebase > Authentication > Settings (Configurações) > Authorized domains (Domínios autorizados) e adicione 'localhost'.";
     } else if (error?.message) {
         friendlyMessage = `Erro: ${error.message}`;
     }
