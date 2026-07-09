@@ -66,15 +66,30 @@ export default function LoginPage() {
   }, [userError]);
 
 
+  const handleAuthError = (error: any) => {
+    let friendlyMessage = "Ocorreu um erro durante a autenticação. Por favor, tente novamente.";
+    if (error?.message?.includes("auth/user-not-found") || error?.message?.includes("auth/invalid-credential")) {
+        friendlyMessage = "E-mail ou senha incorretos.";
+    } else if (error?.message?.includes("auth/wrong-password")) {
+        friendlyMessage = "Senha incorreta. Por favor, tente novamente.";
+    } else if (error?.message?.includes("auth/email-already-in-use")) {
+        friendlyMessage = "Este e-mail já está em uso por outra conta.";
+    } else if (error?.message?.includes("auth/popup-closed-by-user")) {
+        friendlyMessage = "O login foi cancelado.";
+    }
+    setAuthError(friendlyMessage);
+    setIsSubmitting(false);
+  };
+
   const onSubmit = (values: FormValues) => {
     if (!auth) return;
     setIsSubmitting(true);
     setAuthError(null);
 
     if (tab === 'login') {
-      initiateEmailSignIn(auth, values.email, values.password);
+      initiateEmailSignIn(auth, values.email, values.password).catch(handleAuthError);
     } else {
-      initiateEmailSignUp(auth, values.email, values.password);
+      initiateEmailSignUp(auth, values.email, values.password).catch(handleAuthError);
     }
   };
 
@@ -82,7 +97,7 @@ export default function LoginPage() {
     if (!auth) return;
     setIsSubmitting(true);
     setAuthError(null);
-    initiateGoogleSignIn(auth);
+    initiateGoogleSignIn(auth).catch(handleAuthError);
   };
   
   if (isUserLoading || user) {
