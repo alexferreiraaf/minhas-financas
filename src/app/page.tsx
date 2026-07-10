@@ -545,8 +545,8 @@ export default function FinancyCanvas() {
           tableData.push(columns.map(col => col.dataKey(item)));
         });
         tableData.push([
-          { content: `Saldo do dia ${group.dateStr}`, colSpan: columns.length - 2, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
-          { content: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(group.netTotal), colSpan: 2, styles: { fontStyle: 'bold', fillColor: [240, 240, 240], textColor: group.netTotal >= 0 ? [16, 185, 129] : [239, 68, 68], halign: 'right' } }
+          { content: `Saldo do dia ${group.dateStr}`, colSpan: columns.length - 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220], textColor: [30, 30, 30] } },
+          { content: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(group.netTotal), colSpan: 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220], textColor: group.netTotal >= 0 ? [16, 185, 129] : [239, 68, 68], halign: 'right' } }
         ]);
       });
     } else {
@@ -1863,11 +1863,11 @@ setShowReportModal(true);
                                                                 </TableCell>
                                                             </TableRow>
                                                         ))}
-                                                        <TableRow className="bg-muted/30 hover:bg-muted/30">
-                                                            <TableCell colSpan={2} className="font-semibold text-muted-foreground py-2">
+                                                        <TableRow className="bg-gray-200 hover:bg-gray-200 dark:bg-muted/50 dark:hover:bg-muted/50 border-y-2 border-gray-300 dark:border-gray-800">
+                                                            <TableCell colSpan={2} className="font-bold text-gray-800 dark:text-gray-200 py-3">
                                                                 Saldo do dia {group.dateStr}
                                                             </TableCell>
-                                                            <TableCell className={`text-right font-bold py-2 ${group.netTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                            <TableCell className={`text-right font-bold py-3 ${group.netTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                                                 {formatCurrency(group.netTotal)}
                                                             </TableCell>
                                                             <TableCell></TableCell>
