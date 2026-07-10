@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { ArrowUp, ArrowDown, CreditCard, Loader, Users, AlertTriangle, PieChart, ArrowLeft, Trash2, Search, X, CalendarIcon, MoreHorizontal, PlusCircle, Settings, LogOut, CheckSquare, Clock, Edit, Filter, FilterX, FileText, Eye, FileDown, Sparkles } from 'lucide-react';
 import type { Transaction, Group, PredefinedDescription, CreditCard as CreditCardType } from '@/lib/types';
 import { useCollection, useFirebase, useMemoFirebase, useUser, addDocumentNonBlocking, deleteDocumentNonBlocking, signOutUser, setDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase';
-import { collection, query, doc, where, writeBatch, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, query, doc, where, writeBatch, updateDoc, getDocs, deleteField } from 'firebase/firestore';
 import { format, parse, addMonths, getYear, getMonth, set, isValid, startOfMonth, endOfMonth, startOfDay, endOfDay, isWithinInterval, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
@@ -603,20 +603,20 @@ export default function FinancyCanvas() {
 
     if (finalObservation) {
         transactionData.observacao = finalObservation;
-    } else {
-        delete (transactionData as any).observacao;
+    } else if (transactionToEdit) {
+        (transactionData as any).observacao = deleteField();
     }
 
     if (selectedGroupId && selectedGroupId !== 'none') {
         transactionData.groupId = selectedGroupId;
-    } else {
-        delete (transactionData as any).groupId;
+    } else if (transactionToEdit) {
+        (transactionData as any).groupId = deleteField();
     }
 
     if (formType === 'despesa' && selectedCreditCardId && selectedCreditCardId !== 'none') {
         transactionData.creditCardId = selectedCreditCardId;
-    } else {
-        delete (transactionData as any).creditCardId;
+    } else if (transactionToEdit) {
+        (transactionData as any).creditCardId = deleteField();
     }
 
     
