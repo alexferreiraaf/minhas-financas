@@ -513,7 +513,7 @@ export default function FinancyCanvas() {
     setInstallmentTotalValue(inputValue);
   };
 
-  const handleGeneratePdf = useCallback((data: any[], title: string, columns: any[], footerText?: string, customPeriod?: string) => {
+  const handleGeneratePdf = useCallback((data: any[], title: string, columns: any[], footerText?: string, customPeriod?: string, groupByDay?: boolean) => {
     const doc = new jsPDF();
     const periodString = reportStartDate && reportEndDate ? `${format(reportStartDate, 'dd/MM/yyyy')} a ${format(reportEndDate, 'dd/MM/yyyy')}` : '';
     const period = customPeriod || `${periodString}`.toUpperCase();
@@ -524,7 +524,34 @@ export default function FinancyCanvas() {
     doc.setTextColor(100);
     doc.text(`Período: ${period}`, 14, 29);
 
-    const tableData = data.map(item => columns.map(col => col.dataKey(item)));
+    let tableData: any[] = [];
+
+    if (groupByDay) {
+      const groupedItems: { dateStr: string; items: Transaction[]; netTotal: number }[] = [];
+      let currentGroup: { dateStr: string; items: Transaction[]; netTotal: number } | null = null;
+      data.forEach(d => {
+        const dateStr = format(d.data.toDate(), 'dd/MM/yy');
+        if (!currentGroup || currentGroup.dateStr !== dateStr) {
+          if (currentGroup) groupedItems.push(currentGroup);
+          currentGroup = { dateStr, items: [], netTotal: 0 };
+        }
+        currentGroup.items.push(d);
+        currentGroup.netTotal += d.tipo === 'receita' ? d.valor : -d.valor;
+      });
+      if (currentGroup) groupedItems.push(currentGroup);
+
+      groupedItems.forEach(group => {
+        group.items.forEach(item => {
+          tableData.push(columns.map(col => col.dataKey(item)));
+        });
+        tableData.push([
+          { content: `Saldo do dia ${group.dateStr}`, colSpan: columns.length - 2, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } },
+          { content: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(group.netTotal), colSpan: 2, styles: { fontStyle: 'bold', fillColor: [240, 240, 240], textColor: group.netTotal >= 0 ? [16, 185, 129] : [239, 68, 68], halign: 'right' } }
+        ]);
+      });
+    } else {
+      tableData = data.map(item => columns.map(col => col.dataKey(item)));
+    }
     
     doc.autoTable({
       startY: 35,
@@ -532,6 +559,7 @@ export default function FinancyCanvas() {
       body: tableData,
       theme: 'striped',
       headStyles: { fillColor: [33, 150, 243] }, // Primary color
+      styles: { cellPadding: 3, fontSize: 9 },
     });
 
     if (footerText) {
@@ -1045,6 +1073,19 @@ setShowReportModal(true);
       const total = items.reduce((acc, d) => acc + (d.tipo === 'receita' ? d.valor : -d.valor), 0);
       const isExpenseReport = title === 'despesa';
 
+      const groupedItems: { dateStr: string; items: Transaction[]; netTotal: number }[] = [];
+      let currentGroup: { dateStr: string; items: Transaction[]; netTotal: number } | null = null;
+      items.forEach(d => {
+        const dateStr = format(d.data.toDate(), 'dd/MM/yyyy');
+        if (!currentGroup || currentGroup.dateStr !== dateStr) {
+          if (currentGroup) groupedItems.push(currentGroup);
+          currentGroup = { dateStr, items: [], netTotal: 0 };
+        }
+        currentGroup.items.push(d);
+        currentGroup.netTotal += d.tipo === 'receita' ? d.valor : -d.valor;
+      });
+      if (currentGroup) groupedItems.push(currentGroup);
+
       const handlePdfGeneration = () => {
         const pdfTitle = `Relatório de ${title === 'transação' ? 'Lançamentos' : title === 'receita' ? 'Receitas' : 'Despesas'}`;
         const columns = [
@@ -1056,7 +1097,7 @@ setShowReportModal(true);
         ];
         const totalValue = items.reduce((acc, item) => acc + (item.tipo === 'receita' ? item.valor : -item.valor), 0);
         const footer = `Total: ${formatCurrency(totalValue)}`;
-        handleGeneratePdf(items, pdfTitle, columns, footer);
+        handleGeneratePdf(items, pdfTitle, columns, footer, undefined, true);
       };
 
       return (
@@ -1150,44 +1191,54 @@ setShowReportModal(true);
                     </Button>
                 </div>
                 <div className="max-h-[40vh] overflow-y-auto pr-2">
-                  {items.length > 0 ? (
-                    <ul className="space-y-3">
-                        {items.map(d => {
-                          const isIncome = d.tipo === 'receita';
-                          const color = isIncome ? 'emerald' : 'red';
-                          return (
-                            <li key={d.id} className={`group flex justify-between items-start p-3 bg-card border-l-4 border-${color}-400 rounded-lg`}>
-                                <div className="flex items-center min-w-0">
-                                    <div className="mr-3">{d.status === 'pago' ? <CheckSquare className={`h-5 w-5 text-emerald-500`} /> : <Clock className={`h-5 w-5 text-amber-500`} />}</div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-sm text-foreground truncate">{d.descricao}</p>
-                                        <div className="flex flex-wrap gap-1 mt-1">
-                                          {d.groupId && groupMap.get(d.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full inline-block">{groupMap.get(d.groupId)}</span>)}
-                                          {d.creditCardId && creditCardMap.has(d.creditCardId) && (<span className="text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full inline-block flex items-center"><CreditCard className="w-3 h-3 mr-1" />{creditCardMap.get(d.creditCardId)}</span>)}
+                  {groupedItems.length > 0 ? (
+                    <div className="space-y-6">
+                        {groupedItems.map(group => (
+                          <div key={group.dateStr} className="space-y-3">
+                            <div className="sticky top-0 z-10 flex justify-between items-center bg-background/95 backdrop-blur px-3 py-2 rounded-md border-b border-border/50">
+                               <h4 className="font-semibold text-sm text-foreground">{group.dateStr}</h4>
+                               <span className={`font-semibold text-sm ${title === 'receita' ? 'text-emerald-600' : title === 'despesa' ? 'text-red-600' : group.netTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Saldo do dia: {formatCurrency(title === 'despesa' ? Math.abs(group.netTotal) : group.netTotal)}</span>
+                            </div>
+                            <ul className="space-y-3">
+                                {group.items.map(d => {
+                                  const isIncome = d.tipo === 'receita';
+                                  const color = isIncome ? 'emerald' : 'red';
+                                  return (
+                                    <li key={d.id} className={`group flex justify-between items-start p-3 bg-card border-l-4 border-${color}-400 rounded-lg`}>
+                                        <div className="flex items-center min-w-0">
+                                            <div className="mr-3">{d.status === 'pago' ? <CheckSquare className={`h-5 w-5 text-emerald-500`} /> : <Clock className={`h-5 w-5 text-amber-500`} />}</div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-sm text-foreground truncate">{d.descricao}</p>
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                  {d.groupId && groupMap.get(d.groupId) && (<span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full inline-block">{groupMap.get(d.groupId)}</span>)}
+                                                  {d.creditCardId && creditCardMap.has(d.creditCardId) && (<span className="text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full inline-block flex items-center"><CreditCard className="w-3 h-3 mr-1" />{creditCardMap.get(d.creditCardId)}</span>)}
+                                                </div>
+                                                <p className="text-xs text-muted-foreground mt-1">{d.data?.toDate().toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                                            </div>
                                         </div>
-                                        <p className="text-xs text-muted-foreground mt-1">{d.data?.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center flex-shrink-0">
-                                  <p className={`font-semibold text-${color}-600 dark:text-${color}-400 whitespace-nowrap ml-4`}>{isIncome ? '+' : '-'} {formatCurrency(d.valor)}</p>
-                                    {d.observacao && (
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-50 hover:opacity-100 group-hover:opacity-100 transition-opacity">
-                                                    <Eye className="h-4 w-4" />
-                                                </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent className="text-sm w-auto max-w-xs">{d.observacao}</PopoverContent>
-                                        </Popover>
-                                    )}
-                                  {!d.isParcela && (
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(d)}><Edit className="h-4 w-4" /></Button>
-                                  )}
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => d.isParcela ? setInstallmentToDelete(d) : setTransactionToDelete(d.id)}><Trash2 className="h-4 w-4" /></Button>
-                                </div>
-                            </li>
-                        )})}
-                    </ul>
+                                        <div className="flex items-center flex-shrink-0">
+                                          <p className={`font-semibold text-${color}-600 dark:text-${color}-400 whitespace-nowrap ml-4`}>{isIncome ? '+' : '-'} {formatCurrency(d.valor)}</p>
+                                            {d.observacao && (
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-50 hover:opacity-100 group-hover:opacity-100 transition-opacity">
+                                                            <Eye className="h-4 w-4" />
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="text-sm w-auto max-w-xs">{d.observacao}</PopoverContent>
+                                                </Popover>
+                                            )}
+                                          {!d.isParcela && (
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(d)}><Edit className="h-4 w-4" /></Button>
+                                          )}
+                                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => d.isParcela ? setInstallmentToDelete(d) : setTransactionToDelete(d.id)}><Trash2 className="h-4 w-4" /></Button>
+                                        </div>
+                                    </li>
+                                  )})}
+                            </ul>
+                          </div>
+                        ))}
+                    </div>
                   ) : <div className="text-center py-10 text-muted-foreground"><p>Nenhuma {title} encontrada para os filtros.</p></div>}
                 </div>
             </div>
@@ -1775,27 +1826,55 @@ setShowReportModal(true);
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {month.transactions.map(t => (
-                                                <TableRow key={t.id} className="group">
-                                                    <TableCell>
-                                                        <p className="font-medium truncate max-w-[150px] sm:max-w-xs">{t.descricao}</p>
-                                                        <div className="flex flex-wrap gap-1 mt-1">
-                                                          {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full inline-block">{groupMap.get(t.groupId)}</span>}
-                                                          {t.creditCardId && creditCardMap.has(t.creditCardId) && <span className="text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full inline-block flex items-center"><CreditCard className="w-3 h-3 mr-1" />{creditCardMap.get(t.creditCardId)}</span>}
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-right text-muted-foreground text-xs">{format(t.data.toDate(), 'dd/MM/yy')}</TableCell>
-                                                    <TableCell className={`text-right font-medium whitespace-nowrap ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                        {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
-                                                    </TableCell>
-                                                    <TableCell className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <div className="flex items-center justify-end">
-                                                            {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>}
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
+                                            {(() => {
+                                                const groupedItems: { dateStr: string; items: typeof month.transactions; netTotal: number }[] = [];
+                                                let currentGroup: { dateStr: string; items: typeof month.transactions; netTotal: number } | null = null;
+                                                month.transactions.forEach(t => {
+                                                    const dateStr = format(t.data.toDate(), 'dd/MM/yy');
+                                                    if (!currentGroup || currentGroup.dateStr !== dateStr) {
+                                                        if (currentGroup) groupedItems.push(currentGroup);
+                                                        currentGroup = { dateStr, items: [], netTotal: 0 };
+                                                    }
+                                                    currentGroup.items.push(t);
+                                                    currentGroup.netTotal += t.tipo === 'receita' ? t.valor : -t.valor;
+                                                });
+                                                if (currentGroup) groupedItems.push(currentGroup);
+
+                                                return groupedItems.map(group => (
+                                                    <React.Fragment key={group.dateStr}>
+                                                        {group.items.map(t => (
+                                                            <TableRow key={t.id} className="group">
+                                                                <TableCell>
+                                                                    <p className="font-medium truncate max-w-[150px] sm:max-w-xs">{t.descricao}</p>
+                                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                                      {t.groupId && groupMap.get(t.groupId) && <span className="text-xs font-semibold bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full inline-block">{groupMap.get(t.groupId)}</span>}
+                                                                      {t.creditCardId && creditCardMap.has(t.creditCardId) && <span className="text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full inline-block flex items-center"><CreditCard className="w-3 h-3 mr-1" />{creditCardMap.get(t.creditCardId)}</span>}
+                                                                    </div>
+                                                                </TableCell>
+                                                                <TableCell className="text-right text-muted-foreground text-xs">{format(t.data.toDate(), 'dd/MM/yy')}</TableCell>
+                                                                <TableCell className={`text-right font-medium whitespace-nowrap ${t.tipo === 'receita' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                                    {t.tipo === 'receita' ? '+' : '-'} {formatCurrency(t.valor)}
+                                                                </TableCell>
+                                                                <TableCell className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <div className="flex items-center justify-end">
+                                                                        {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>}
+                                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                                            <TableCell colSpan={2} className="font-semibold text-muted-foreground py-2">
+                                                                Saldo do dia {group.dateStr}
+                                                            </TableCell>
+                                                            <TableCell className={`text-right font-bold py-2 ${group.netTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                                {formatCurrency(group.netTotal)}
+                                                            </TableCell>
+                                                            <TableCell></TableCell>
+                                                        </TableRow>
+                                                    </React.Fragment>
+                                                ));
+                                            })()}
                                         </TableBody>
                                     </Table>
                                 </div>
