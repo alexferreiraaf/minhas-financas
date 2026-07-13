@@ -105,6 +105,8 @@ export default function FinancyCanvas() {
   const [showCreditCardsModal, setShowCreditCardsModal] = useState(false);
   const [newCreditCardName, setNewCreditCardName] = useState('');
   const [showResetBalanceDialog, setShowResetBalanceDialog] = useState(false);
+  const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiSuggestedCategory, setAiSuggestedCategory] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1015,6 +1017,27 @@ setShowReportModal(true);
     setShowResetBalanceDialog(false);
   };
 
+  const handleDeleteAllTransactions = async () => {
+    if (!user || !firestore) return;
+    setIsDeletingAll(true);
+    try {
+      const dbBatch = writeBatch(firestore);
+      const userTransactionsCollection = collection(firestore, 'users', user.uid, 'transactions');
+      const snapshot = await getDocs(query(userTransactionsCollection));
+      snapshot.forEach(docSnap => {
+        dbBatch.delete(docSnap.ref);
+      });
+      await dbBatch.commit();
+      toast({ title: "Sucesso", description: "Todos os lançamentos foram excluídos." });
+    } catch (err: any) {
+      console.error(err);
+      toast({ variant: "destructive", title: "Erro", description: "Falha ao excluir os lançamentos." });
+    } finally {
+      setIsDeletingAll(false);
+      setShowDeleteAllDialog(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-background">
@@ -1646,9 +1669,10 @@ setShowReportModal(true);
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
               <div className="flex-1">
                   <h1 className="text-2xl font-extrabold text-foreground flex items-center"><CreditCard className="w-6 h-6 mr-2 text-primary" />Minhas Finanças</h1>
-                  <div className="flex items-center gap-3 mt-4">
-                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Saldo Atual (Pago)</h2>
+                  <div className="flex items-center mt-4">
+                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mr-3">Saldo Atual (Pago)</h2>
                       <Button variant="outline" size="sm" onClick={() => setShowResetBalanceDialog(true)} disabled={balance === 0} className="h-6 px-2 text-xs">Zerar Saldo</Button>
+                      <Button variant="destructive" size="sm" onClick={() => setShowDeleteAllDialog(true)} disabled={transactions.length === 0} className="h-6 px-2 text-xs ml-2">Excluir Tudo</Button>
                   </div>
                   <p className={`text-4xl font-bold mt-1 transition-colors duration-300 ${balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(balance)}</p>
               </div>
@@ -2220,6 +2244,24 @@ setShowReportModal(true);
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleResetBalance}>Confirmar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteAllDialog} onOpenChange={setShowDeleteAllDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir todos os lançamentos?</AlertDialogTitle>
+            <AlertDialogDescription>
+                Esta ação é irreversível. Todos os seus lançamentos, receitas, despesas e parcelamentos serão excluídos permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingAll}>Cancelar</AlertDialogCancel>
+            <Button variant="destructive" onClick={handleDeleteAllTransactions} disabled={isDeletingAll}>
+              {isDeletingAll ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Excluir Tudo
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
