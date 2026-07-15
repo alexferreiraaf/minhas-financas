@@ -1227,7 +1227,14 @@ setShowReportModal(true);
                                   const isIncome = d.tipo === 'receita';
                                   const color = isIncome ? 'emerald' : 'red';
                                   return (
-                                    <li key={d.id} className={`group flex justify-between items-start p-3 bg-card border-l-4 border-${color}-400 rounded-lg`}>
+                                    <li key={d.id} className={`group cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all flex justify-between items-start p-3 bg-card border-l-4 border-${color}-400 rounded-lg`} onClick={() => {
+                                        if (d.isParcela) {
+                                            setInstallmentToView(d);
+                                            setShowInstallmentDetailModal(true);
+                                        } else {
+                                            openModalForEdit(d);
+                                        }
+                                    }}>
                                         <div className="flex items-center min-w-0">
                                             <div className="mr-3">{d.status === 'pago' ? <CheckSquare className={`h-5 w-5 text-emerald-500`} /> : <Clock className={`h-5 w-5 text-amber-500`} />}</div>
                                             <div className="flex-1 min-w-0">
@@ -1244,7 +1251,7 @@ setShowReportModal(true);
                                             {d.observacao && (
                                                 <Popover>
                                                     <PopoverTrigger asChild>
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-50 hover:opacity-100 group-hover:opacity-100 transition-opacity">
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-50 hover:opacity-100 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                                                             <Eye className="h-4 w-4" />
                                                         </Button>
                                                     </PopoverTrigger>
@@ -1252,9 +1259,9 @@ setShowReportModal(true);
                                                 </Popover>
                                             )}
                                           {!d.isParcela && (
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => openModalForEdit(d)}><Edit className="h-4 w-4" /></Button>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); openModalForEdit(d); }}><Edit className="h-4 w-4" /></Button>
                                           )}
-                                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => d.isParcela ? setInstallmentToDelete(d) : setTransactionToDelete(d.id)}><Trash2 className="h-4 w-4" /></Button>
+                                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); d.isParcela ? setInstallmentToDelete(d) : setTransactionToDelete(d.id); }}><Trash2 className="h-4 w-4" /></Button>
                                         </div>
                                     </li>
                                   )})}
@@ -1867,7 +1874,14 @@ setShowReportModal(true);
                                                 return groupedItems.map(group => (
                                                     <React.Fragment key={group.dateStr}>
                                                         {group.items.map(t => (
-                                                            <TableRow key={t.id} className="group">
+                                                            <TableRow key={t.id} className="group cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => {
+                                                                if (t.isParcela) {
+                                                                    setInstallmentToView(t);
+                                                                    setShowInstallmentDetailModal(true);
+                                                                } else {
+                                                                    openModalForEdit(t);
+                                                                }
+                                                            }}>
                                                                 <TableCell>
                                                                     <p className="font-medium truncate max-w-[150px] sm:max-w-xs">{t.descricao}</p>
                                                                     <div className="flex flex-wrap gap-1 mt-1">
@@ -1881,8 +1895,8 @@ setShowReportModal(true);
                                                                 </TableCell>
                                                                 <TableCell className="opacity-0 group-hover:opacity-100 transition-opacity">
                                                                     <div className="flex items-center justify-end">
-                                                                        {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openModalForEdit(t)}><Edit className="h-4 w-4" /></Button>}
-                                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id)}><Trash2 className="h-4 w-4" /></Button>
+                                                                        {!t.isParcela && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openModalForEdit(t); }}><Edit className="h-4 w-4" /></Button>}
+                                                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); t.isParcela ? setInstallmentToDelete(t) : setTransactionToDelete(t.id); }}><Trash2 className="h-4 w-4" /></Button>
                                                                     </div>
                                                                 </TableCell>
                                                             </TableRow>
